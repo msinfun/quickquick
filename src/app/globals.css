@@ -1,0 +1,302 @@
+@import "tailwindcss";
+
+@theme {
+   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+   /* =========================================
+     Color Tokens (色彩系統)
+     Tailwind 轉換規則：可自由搭配 bg-*, text-*, border-*
+     ========================================= */
+   --color-bg-base: #121212;
+   /* 基礎底色 | 對應 Class: bg-bg-base */
+
+   --color-surface-primary: #1C1C1E;
+   /* 卡片表面色 | 對應 Class: bg-surface-primary */
+
+   --color-surface-glass: rgba(255, 255, 255, 0.08);
+   /* 玻璃透色 | 對應 Class: bg-surface-glass */
+
+   --color-surface-glass-heavy: rgba(255, 255, 255, 0.15);
+   /* 重玻璃透色 | 對應 Class: bg-surface-glass-heavy */
+
+   --color-border-subtle: rgba(255, 255, 255, 0.04);
+   /* 極暗邊框色 | 對應 Class: border-border-subtle */
+
+   --color-brand-primary: #10b981;
+   /* 品牌主色 (亮綠) | 對應 Class: bg-brand-primary, text-brand-primary */
+
+   --color-brand-secondary: #6366f1;
+   /* 品牌次色 | 對應 Class: bg-brand-secondary, text-brand-secondary */
+
+   --color-text-primary: rgba(255, 255, 255, 0.8);
+   /* 主內文 (護眼白) | 對應 Class: text-text-primary */
+
+   --color-text-secondary: rgba(255, 255, 255, 0.7);
+   /* 次要內文 (灰) | 對應 Class: text-text-secondary */
+
+   --color-text-tertiary: rgba(255, 255, 255, 0.45);
+   /* 佔位符提示字 | 對應 Class: text-text-tertiary */
+
+   --color-semantic-danger: #fb7185;
+   /* 警告/刪除色 | 對應 Class: text-semantic-danger, bg-semantic-danger */
+
+   --color-semantic-success: #10b981;
+   /* 成功狀態色 | 對應 Class: text-semantic-success, bg-semantic-success */
+
+   /* =========================================
+     Typography Weights (字體粗細系統)
+     Tailwind 轉換規則：前綴攔截 --font-weight-* 轉為 font-*
+     ========================================= */
+   --font-weight-h1: 900;
+   /* 對應 Class: font-h1 */
+   --font-weight-h2: 800;
+   /* 對應 Class: font-h2 */
+   --font-weight-h3: 800;
+   /* 對應 Class: font-h3 */
+   --font-weight-body: 700;
+   /* 對應 Class: font-body */
+   --font-weight-caption: 600;
+   /* 對應 Class: font-caption */
+   --font-weight-micro: 900;
+   /* 對應 Class: font-micro */
+
+   /* =========================================
+     Typography Sizes (字體大小系統)
+     Tailwind 轉換規則：前綴攔截 --text-* 轉為 text-*
+     ========================================= */
+   --text-h1: 2.25rem;
+   /* 36px | 對應 Class: text-h1 */
+   --text-h2: 1.75rem;
+   /* 28px | 對應 Class: text-h2 */
+   --text-h3: 1.25rem;
+   /* 20px | 對應 Class: text-h3 */
+   --text-body: 1.0625rem;
+   /* 17px | 對應 Class: text-body */
+   --text-caption: 0.8125rem;
+   /* 13px | 對應 Class: text-caption */
+   --text-micro: 0.625rem;
+   /* 10px | 對應 Class: text-micro */
+
+   /* =========================================
+     Shape Tokens (圓角與形狀系統)
+     Tailwind 轉換規則：前綴攔截 --radius-* 轉為 rounded-*
+     ========================================= */
+   --radius-card: 32px;
+   /* 外層大卡片 | 對應 Class: rounded-card */
+   --radius-inner: 16px;
+   /* 內部小卡片 | 對應 Class: rounded-inner */
+   --radius-button: 9999px;
+   /* 全圓角按鈕 | 對應 Class: rounded-button */
+   --radius-input: 24px;
+   /* 輸入框圓角 | 對應 Class: rounded-input */
+
+   /* =========================================
+     Z-Index Tokens (Z 軸堆疊層級系統)
+     Tailwind 轉換規則：前綴攔截 --z-index-* 轉為 z-*
+     ========================================= */
+   --z-index-base: 0;
+   /* 預設底層 | 對應 Class: z-base */
+   --z-index-nav: 40;
+   /* 底部與頂部導覽列 | 對應 Class: z-nav */
+   --z-index-dropdown: 50;
+   /* 局部彈出選單 | 對應 Class: z-dropdown */
+   --z-index-overlay: 60;
+   /* 彈窗背後的黑半透明遮罩 | 對應 Class: z-overlay */
+   --z-index-modal: 70;
+   /* 全螢幕彈窗 / 編輯表單 | 對應 Class: z-modal */
+   --z-index-toast: 100;
+   /* 系統提示訊息 | 對應 Class: z-toast */
+
+   /* =========================================
+     Opacity Tokens (透明度與互動狀態系統)
+     Tailwind 轉換規則：前綴攔截 --opacity-* 轉為 opacity-*
+     ========================================= */
+   --opacity-disabled: 0.3;
+   /* 禁用狀態 (按鈕灰階化) | 對應 Class: opacity-disabled */
+   --opacity-active: 0.7;
+   /* 點擊按壓狀態 (按下去瞬間微暗) | 對應 Class: opacity-active */
+   --opacity-glass: 0.85;
+   /* 導覽列微透視效果 | 對應 Class: opacity-glass */
+
+   /* =========================================
+     Transition / Animation Tokens (動態時間系統)
+     Tailwind 轉換規則：前綴攔截 --transition-duration-* 轉為 duration-*
+     ========================================= */
+   --transition-duration-fast: 150ms;
+   /* 按鈕點擊、Icon變色 | 對應 Class: duration-fast */
+   --transition-duration-normal: 300ms;
+   /* 彈窗出現、卡片展開 | 對應 Class: duration-normal */
+
+   /* =========================================
+     Blur Tokens (毛玻璃材質與模糊系統)
+     Tailwind 轉換規則：前綴攔截 --blur-* 轉為 blur-* 或 backdrop-blur-*
+     ========================================= */
+   --blur-nav: 20px;
+   /* 適用於：頂部與底部 Navbar (輕度模糊) */
+   --blur-standard: 48px;
+   /* 適用於：一般玻璃卡片 (中度模糊，對應你下方的設定) */
+   --blur-heavy: 64px;
+   /* 適用於：Modal 彈窗背後的遮罩 (重度模糊) */
+
+   /* =========================================
+     Line Height Tokens (行高系統)
+     Tailwind 轉換規則：前綴攔截 --leading-* 轉為 leading-*
+     ========================================= */
+   --leading-none: 1;
+   /* 適用於：單行的特大數字 (總資產)，確保垂直置中不偏移 */
+   --leading-tight: 1.2;
+   /* 適用於：多行大標題 (h1, h2) */
+   --leading-normal: 1.5;
+   /* 適用於：標準內文 (body)，提供眼睛閱讀的呼吸空間 */
+
+   /* =========================================
+     Safe Area Spacing (iOS 硬體安全區間距)
+     Tailwind 轉換規則：前綴攔截 --spacing-* 轉為 p-*, m-*, gap-*
+     ========================================= */
+   --spacing-safe-bottom: env(safe-area-inset-bottom, 20px);
+   /* 避開 iOS 底部橫條 */
+   --spacing-safe-top: max(env(safe-area-inset-top), 1.5rem);
+   /* 避開動態島/瀏海 */
+
+   /* =========================================
+     Border Width Tokens (邊框粗細系統)
+     Tailwind 轉換規則：前綴攔截 --border-width-* 轉為 border-*
+     ========================================= */
+   --border-width-hairline: 0.5px;
+   /* 對應 Class: border-hairline | 專用於 iOS Retina 極細分隔線 */
+   --border-width-thick: 2px;
+   /* 對應 Class: border-thick | 專用於：選中的圖示或強調邊框 */
+
+   /* =========================================
+     Spacing Tokens (語義化間距系統)
+     Tailwind 轉換規則：前綴攔截 --spacing-* 轉為 p-*, m-*, gap-*
+     ========================================= */
+   --spacing-screen: 1.25rem;
+   /* 對應 Class: px-screen, gap-screen | 20px 螢幕左右安全基準線 */
+   --spacing-section: 1.5rem;
+   /* 對應 Class: gap-section, py-section | 24px 大區塊垂直間距 */
+   --spacing-item: 1rem;
+   /* 對應 Class: gap-item, p-item | 16px 卡片或列表內部間距 */
+   --spacing-inner: 0.5rem;
+   /* 對應 Class: gap-inner, p-inner | 8px 元件內部小間距 */
+   --spacing-inner-label: 0.5rem;
+   /* 對應 Class: px-inner-label | 8px Label 縮進 */
+   --spacing-micro: 0.25rem;
+   /* 對應 Class: gap-micro, p-micro | 4px 微小間距 */
+   --spacing-input-pl: 3rem;
+   /* 對應 Class: pl-input-pl | 48px 輸入框左側圖示預留空間 */
+   --spacing-nav-clearance: 8rem;
+   /* 約 128px，完美避開懸浮膠囊與 iOS 底線 */
+
+   /* =========================================
+     Size & Icon Tokens (尺寸與圖示系統)
+     Tailwind 轉換規則：前綴攔截 --size-* 轉為 size-* (同時設定 w 與 h)
+     ========================================= */
+   --size-icon-sm: 1rem;
+   /* 對應 Class: size-icon-sm | 16px 輔助圖示 (搭配 text-caption) */
+   --size-icon-md: 1.25rem;
+   /* 對應 Class: size-icon-md | 20px 列表前置圖示 (搭配 text-body) */
+   --size-icon-lg: 1.5rem;
+   /* 對應 Class: size-icon-lg | 24px 導覽列主圖示 (搭配 text-h3) */
+   --size-icon-xl: 2rem;
+   /* 對應 Class: size-icon-xl | 32px 畫面核心大圖示 */
+   --size-icon-container: 2.5rem;
+   /* 對應 Class: size-icon-container | 40px 按鈕/圖示容器區塊 */
+   --size-avatar-lg: 6rem;
+   /* 對應 Class: size-avatar-lg | 96px 大頭貼或大容器區塊 */
+
+   /* =========================================
+     Easing Tokens (動態緩動/彈簧曲線系統)
+     Tailwind 轉換規則：前綴攔截 --ease-* 轉為 ease-*
+     ========================================= */
+   --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+   /* 對應 Class: ease-apple | Apple 經典的快速啟動、柔和煞車曲線 */
+   --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+   /* 對應 Class: ease-spring | 帶有微回彈效果，適合 Modal 或成功提示 */
+
+   /* =========================================
+     Shadow / Elevation Tokens (陰影與空間高度系統)
+     Tailwind 轉換規則：前綴攔截 --shadow-* 轉為 shadow-*
+     ========================================= */
+   --shadow-floating: 0 8px 32px rgba(0, 0, 0, 0.6);
+   /* 對應 Class: shadow-floating | 專用於：懸浮新增按鈕 (FAB) 或底部選單 */
+   --shadow-dropdown: 0 4px 24px rgba(0, 0, 0, 0.8), 0 0 1px rgba(255, 255, 255, 0.1);
+   /* 對應 Class: shadow-dropdown | 專用於：彈出對話框 (帶有極細的反光邊緣) */
+
+   /* =========================================
+     Tracking / Letter Spacing Tokens (字距呼吸感系統)
+     Tailwind 轉換規則：前綴攔截 --tracking-* 轉為 tracking-*
+     ========================================= */
+   --tracking-tight: -0.02em;
+   /* 對應 Class: tracking-tight | 搭配 text-h1, text-h2 使用 */
+   --tracking-wide: 0.05em;
+   /* 對應 Class: tracking-wide | 搭配 text-micro, text-caption 使用，確保小字清晰 */
+}
+
+@layer utilities {
+
+   /* iOS 26 Ultra Glassmorphism Card Style */
+   .glass-card {
+      background: var(--color-surface-glass);
+      backdrop-filter: blur(var(--blur-standard, 48px));
+      -webkit-backdrop-filter: blur(var(--blur-standard, 48px));
+      border: var(--border-thin, 0.5px) solid var(--color-border-subtle);
+      border-radius: var(--radius-card);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      /* For high frequency depth effect */
+      background-clip: padding-box;
+   }
+
+   .glass-panel {
+      background: rgba(10, 10, 10, 0.6);
+      backdrop-filter: blur(var(--blur-heavy, 64px));
+      -webkit-backdrop-filter: blur(var(--blur-heavy, 64px));
+      border-top: var(--border-thin, 0.5px) solid var(--color-surface-glass-heavy);
+   }
+
+   /* Inner glow for glass */
+   .glass-card-glow {
+      position: relative;
+   }
+
+   .glass-card-glow::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(to bottom, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 100%);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask-composite: exclude;
+      pointer-events: none;
+   }
+
+   /* Hide scrollbar for clean mobile UI */
+   .no-scrollbar::-webkit-scrollbar {
+      display: none;
+   }
+
+   .no-scrollbar {
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+   }
+
+   .object-delay {
+      animation-delay: -4s;
+   }
+}
+
+:root {
+   --background: #000000;
+   --foreground: #ffffff;
+}
+
+body {
+   background-color: var(--color-bg-base);
+   color: var(--foreground);
+   -webkit-tap-highlight-color: transparent;
+}
