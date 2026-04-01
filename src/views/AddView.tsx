@@ -22,6 +22,7 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
   const [inputText, setInputText] = useState("");
   const [images, setImages] = useState<string[]>([]); // Base64 or Blob URLs
   const [isParsing, setIsParsing] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Voice Recording States
   const [isRecording, setIsRecording] = useState(false);
@@ -61,20 +62,34 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
     if (!inputText && images.length === 0) return;
 
     setIsParsing(true);
+    setValidationError(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
       const { categoryDict, historyData } = await getAIContext();
-      const results = await AIService.parseInput(inputText, categoryDict, historyData, images);
+      const results = await AIService.parseInput(inputText, categoryDict, historyData, images, undefined, controller.signal);
 
       if (results.length > 0) {
-        await saveResultsToDB(results, images.length > 0 ? "照片新增" : inputText);
+        let sourcePrefix = "";
+        if (images && images.length > 0) {
+          sourcePrefix = "來源：照片輸入。";
+        } else {
+          sourcePrefix = `來源：文字輸入：${inputText}`;
+        }
+        await saveResultsToDB(results, sourcePrefix);
         if (onSuccess) onSuccess();
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        setValidationError("AI 辨識已超時 (20秒)，請檢查網路連線或稍後再試。");
+      } else {
+        setValidationError(error.message || "網路連線失敗，請檢查您的網路狀態。");
+      }
       console.error("AI Send Error:", error);
     } finally {
+      clearTimeout(timeoutId);
       setIsParsing(false);
-      onBack();
     }
   };
 
@@ -124,28 +139,47 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
           if (audioBlob.size < 1000) return; // Ignore very short taps
 
           setIsParsing(true);
+          setValidationError(null);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 20000);
+
           try {
             const { categoryDict, historyData } = await getAIContext();
             const reader = new FileReader();
-            reader.onloadend = async () => {
-              const base64Audio = (reader.result as string).split(',')[1];
-              const results = await AIService.parseInput("", categoryDict, historyData, images, {
-                data: base64Audio,
-                mimeType: 'audio/webm'
-              });
+            
+            const processAudio = new Promise<void>((resolve, reject) => {
+              reader.onloadend = async () => {
+                try {
+                  const base64Audio = (reader.result as string).split(',')[1];
+                  const results = await AIService.parseInput("", categoryDict, historyData, images, {
+                    data: base64Audio,
+                    mimeType: 'audio/webm'
+                  }, controller.signal);
 
-              if (results.length > 0) {
-                // Same logic as handleSend to save results
-                await saveResultsToDB(results, "語音新增");
-                if (onSuccess) onSuccess();
-              }
-            };
-            reader.readAsDataURL(audioBlob);
-          } catch (err) {
-            console.error("Audio Processing Error:", err);
+                  if (results.length > 0) {
+                    let sourcePrefix = `來源：語音辨識：${inputText || "音訊檔"}`;
+                    await saveResultsToDB(results, sourcePrefix);
+                    if (onSuccess) onSuccess();
+                  }
+                  resolve();
+                } catch (err) {
+                  reject(err);
+                }
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(audioBlob);
+            });
+            await processAudio;
+          } catch (error: any) {
+            if (error.name === 'AbortError') {
+              setValidationError("AI 辨識已超時 (20秒)，請檢查網路連線或稍後再試。");
+            } else {
+              setValidationError(error.message || "網路連線失敗，請檢查您的網路狀態。");
+            }
+            console.error("Audio Processing Error:", error);
           } finally {
+            clearTimeout(timeoutId);
             setIsParsing(false);
-            if (onBack) onBack();
           }
         };
 
@@ -168,27 +202,47 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
     if (!file) return;
 
     setIsParsing(true);
+    setValidationError(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
     try {
       const { categoryDict, historyData } = await getAIContext();
       const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Audio = (reader.result as string).split(',')[1];
-        const results = await AIService.parseInput("", categoryDict, historyData, images, {
-          data: base64Audio,
-          mimeType: file.type || 'audio/webm'
-        });
+      
+      const processFile = new Promise<void>((resolve, reject) => {
+        reader.onloadend = async () => {
+          try {
+            const base64Audio = (reader.result as string).split(',')[1];
+            const results = await AIService.parseInput("", categoryDict, historyData, images, {
+              data: base64Audio,
+              mimeType: file.type || 'audio/webm'
+            }, controller.signal);
 
-        if (results.length > 0) {
-          await saveResultsToDB(results, "語音新增");
-          if (onSuccess) onSuccess();
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error("Audio File Processing Error:", err);
+            if (results.length > 0) {
+              let sourcePrefix = `來源：語音檔案輸入：${file.name}`;
+              await saveResultsToDB(results, sourcePrefix);
+              if (onSuccess) onSuccess();
+            }
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await processFile;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        setValidationError("AI 辨識已超時 (20秒)，請檢查網路連線或稍後再試。");
+      } else {
+        setValidationError(error.message || "網路連線失敗，請檢查您的網路狀態。");
+      }
+      console.error("Audio File Processing Error:", error);
     } finally {
+      clearTimeout(timeoutId);
       setIsParsing(false);
-      onBack();
     }
     // Reset
     e.target.value = "";
@@ -221,8 +275,10 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
 
   // Shared Helper to save results
   const saveResultsToDB = async (results: any[], baseNote: string) => {
-    // 取得現有帳戶清單，用於名稱配對
+    // 取得現有帳戶清單與分類設定，用於名稱配對與屬性判定
     const accountsList = await db.accounts.toArray();
+    const categoriesSettingRecord = await db.settings.where("key").equals("categories").first();
+    const categoriesList = (categoriesSettingRecord?.value as any[]) || [];
 
     const receiptGroups: Record<string, any[]> = {};
     results.forEach((res: any) => {
@@ -241,7 +297,10 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
           const finalItemName = res.item_name || res.itemName || "未指定項目";
           const finalMainCat = res.main_category || res.mainCategory || "飲食";
           const finalSubCat = res.sub_category || res.subCategory || "其他";
-          const finalNote = res.note ? `${res.note}${baseNote ? ` (${baseNote})` : ""}` : baseNote;
+          // 確保 sourcePrefix 在第一行，其餘 AI 解析或自訂備註在下一行
+          const finalNote = res.note 
+            ? `${baseNote}\n${res.note}` 
+            : baseNote;
 
           // 1. 嘗試配對帳戶：若 AI 有解析出帳戶名稱，嘗試與資料庫比對
           const aiAccountName = res.account || res.account_name || "";
@@ -265,13 +324,17 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
 
           const status = determineStatus();
 
+          const matchedCat = categoriesList.find((c: any) => c.name === finalMainCat);
+          const finalType = matchedCat ? matchedCat.type : (finalMainCat === "收入" || finalMainCat.includes("收入") ? "income" : "expense");
+          const finalSignedAmount = finalType === "income" ? Math.abs(finalAmount) : -Math.abs(finalAmount);
+
           await db.transactions.add({
             date: finalDate,
-            type: "expense",
+            type: finalType,
             main_category: finalMainCat,
             sub_category: finalSubCat,
             account_id: finalAccountId === -1 ? undefined : finalAccountId,
-            amount: -Math.abs(finalAmount),
+            amount: finalSignedAmount,
             item_name: finalItemName,
             merchant: res.merchant || "",
             status: status,
@@ -280,12 +343,12 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
             invoice_number: res.invoice_number || ""
           });
 
-          // 如果狀態為 completed，同步扣除帳戶餘額
+          // 如果狀態為 completed，同步更新帳戶餘額 (收入為加，支出為扣)
           if (status === "completed" && finalAccountId !== -1) {
             const account = await db.accounts.get(finalAccountId);
             if (account) {
               await db.accounts.update(finalAccountId, {
-                current_balance: account.current_balance - Math.abs(finalAmount)
+                current_balance: account.current_balance + finalSignedAmount
               });
             }
           }
@@ -401,6 +464,17 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
             placeholder="今天花了什麼？例如：中午吃麥當勞 180 元"
             className="flex-1 bg-transparent border-none outline-none text-h2 font-body text-text-primary placeholder:text-text-tertiary resize-none no-scrollbar disabled:opacity-disabled min-h-[160px] leading-tight"
           />
+
+          {validationError && (
+            <div className="flex items-start gap-inner text-semantic-danger bg-semantic-danger/10 p-inner rounded-button border border-semantic-danger/20 mb-2 mt-auto">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-icon-sm shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <span className="text-caption font-caption leading-tight">{validationError}</span>
+            </div>
+          )}
 
           {/* Action Buttons inside Input Box */}
           <div className="flex items-center justify-between pt-6 border-t border-border-subtle">

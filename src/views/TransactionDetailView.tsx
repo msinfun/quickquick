@@ -111,7 +111,7 @@ export default function TransactionDetailView({
         <div className="flex-1 overflow-y-auto no-scrollbar px-screen pb-nav-clearance flex flex-col gap-section bg-bg-base">
           {/* Top Amount: Direct on Background */}
           <div className="flex flex-col items-center py-[var(--size-icon-container)]">
-            <span className={`text-[2.5rem] font-h2 tabular-nums tracking-tight leading-none ${totalAmount < 0 ? 'text-semantic-danger' : 'text-brand-primary'}`}>
+            <span className={`text-h1 font-h1 tabular-nums ${ (Array.isArray(transactions) ? transactions[0].type : transactions.type) === 'expense' ? 'text-semantic-danger' : 'text-brand-primary'}`}>
               {totalAmount < 0 ? '-' : totalAmount > 0 ? '+' : ''}$ {Math.abs(totalAmount).toLocaleString()}
             </span>
             <div className="mt-item flex items-center gap-micro">
@@ -156,16 +156,16 @@ export default function TransactionDetailView({
                     key={idx}
                     className={`flex items-center justify-between p-item transition-all duration-normal ease-apple ${isPending ? 'bg-semantic-danger/[0.02]' : ''}`}
                   >
-                    <div className="flex items-center gap-item">
+                    <div className="flex items-center gap-item flex-1 min-w-0">
                       <div className="size-icon-container flex items-center justify-center text-brand-primary bg-bg-base/40 rounded-button shadow-inner shrink-0">
                         {renderIcon(getIconName(tx.main_category, tx.sub_category), isPending ? "size-icon-md text-semantic-danger" : "size-icon-md text-brand-primary")}
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-body font-body text-text-primary leading-normal">{tx.item_name || tx.main_category}</span>
-                        <span className="text-caption font-caption text-text-tertiary uppercase tracking-wide mt-0.5">{tx.main_category} · {tx.sub_category}</span>
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="text-body font-body text-text-primary leading-normal truncate">{tx.item_name || tx.main_category}</span>
+                        <span className="text-caption font-caption text-text-tertiary uppercase tracking-wide mt-0.5 truncate">{tx.main_category} · {tx.sub_category}</span>
                       </div>
                     </div>
-                    <span className={`text-h3 font-h3 tabular-nums tracking-tighter ${tx.type === 'expense' ? 'text-semantic-danger' : tx.type === 'income' ? 'text-brand-primary' : 'text-text-tertiary'}`}>
+                    <span className={`text-h3 font-h3 tabular-nums tracking-tighter shrink-0 pl-item whitespace-nowrap ${tx.type === 'expense' ? 'text-semantic-danger' : tx.type === 'income' ? 'text-brand-primary' : 'text-text-tertiary'}`}>
                       {tx.amount < 0 ? '-' : tx.amount > 0 ? '+' : ''}$ {Math.abs(tx.amount).toLocaleString()}
                     </span>
                   </div>
@@ -178,7 +178,7 @@ export default function TransactionDetailView({
           {mainTx.note && (
             <div className="flex flex-col gap-inner">
               <span className="text-caption font-caption text-text-tertiary px-inner-label uppercase tracking-wide">備註內容</span>
-              <div className="bg-surface-primary rounded-card p-item border border-hairline border-border-subtle text-body font-body text-text-primary leading-relaxed shadow-sm">
+              <div className="bg-surface-primary rounded-card p-item border border-hairline border-border-subtle text-body font-body text-text-primary leading-relaxed shadow-sm whitespace-pre-wrap">
                 {mainTx.note}
               </div>
             </div>

@@ -8,6 +8,7 @@ export interface AIParseResult {
   main_category: string;
   sub_category: string;
   merchant: string;
+  account_name?: string;
   billing_month: string;
   invoice_number: string;
   note: string;
@@ -38,7 +39,7 @@ export class AIService {
   /**
    * Parses natural language input into structured transaction data.
    */
-  static async parseInput(input: string, categoryDict: Record<string, string[]>, historyData: { merchant: string; main_category: string; sub_category: string }[], images: string[] = [], audio?: { data: string, mimeType: string }): Promise<AIParseResult[]> {
+  static async parseInput(input: string, categoryDict: Record<string, string[]>, historyData: { merchant: string; main_category: string; sub_category: string }[], images: string[] = [], audio?: { data: string, mimeType: string }, signal?: AbortSignal): Promise<AIParseResult[]> {
     const systemPrompt = this.generateSystemPrompt(categoryDict, historyData);
     
     try {
@@ -46,7 +47,7 @@ export class AIService {
       
       // Attempt to use Real Gemini AI
       try {
-        const results = await GeminiService.parseExpense(systemPrompt, input, images, audio);
+        const results = await GeminiService.parseExpense(systemPrompt, input, images, audio, signal);
         if (results && results.length > 0) {
           return results;
         }

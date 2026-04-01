@@ -332,7 +332,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
                       onClick={() => isGroup ? setSelectedTx(entry.data) : setSelectedTx(displayTx)}
                       className="flex items-center justify-between px-section py-item bg-surface-primary active:bg-surface-glass active:opacity-active transition-colors duration-fast"
                     >
-                      <div className="flex items-center gap-item">
+                      <div className="flex items-center gap-item flex-1 min-w-0">
                         <div className="size-icon-container text-[3rem] rounded-inner bg-bg-base flex items-center justify-center text-brand-primary group-hover:scale-110 transition-transform relative shrink-0">
                           {isGroup ? <Box className="size-icon-md text-brand-primary" /> : getIcon(displayTx.main_category, displayTx.sub_category)}
                           {isGroup && (
@@ -341,7 +341,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
                             </div>
                           )}
                         </div>
-                        <div className="flex flex-col truncate">
+                        <div className="flex flex-col flex-1 min-w-0">
                           <span className="font-body text-body leading-normal text-text-primary truncate">
                             {isGroup ? entry.merchant : (displayTx.item_name || displayTx.merchant || displayTx.main_category)}
                           </span>
@@ -353,7 +353,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
                           </span>
                         </div>
                       </div>
-                      <span className={`text-body font-h3 tabular-nums ${amount < 0 ? 'text-semantic-danger' : amount > 0 ? 'text-brand-primary' : 'text-text-tertiary'}`}>
+                      <span className={`font-h2 text-h3 tabular-nums tracking-tighter shrink-0 pl-item ${displayTx.type === 'expense' ? 'text-semantic-danger' : displayTx.type === 'income' ? 'text-brand-primary' : 'text-text-tertiary'}`}>
                         {amount < 0 ? '-' : amount > 0 ? '+' : ''}${Math.abs(amount).toLocaleString()}
                       </span>
                     </div>

@@ -162,11 +162,11 @@ function PendingItem({ tx, onConfirm, onEdit, onDelete, getIcon }: { tx: Transac
       exit={{ opacity: 0, scale: 0.95 }}
       className="w-full p-item flex items-center justify-between active:bg-surface-glass transition-all active:opacity-active duration-fast group relative ease-apple"
     >
-      <div className="flex items-center gap-item flex-1 overflow-hidden" onClick={() => onEdit(tx)}>
+      <div className="flex items-center gap-item flex-1 min-w-0" onClick={() => onEdit(tx)}>
         <div className="size-icon-md flex items-center justify-center text-brand-primary bg-bg-base rounded-button shadow-inner shrink-0 group-active:scale-90 transition-all duration-fast">
           {getIcon(tx.main_category, tx.sub_category)}
         </div>
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col flex-1 min-w-0">
           <div className="flex items-center gap-micro.5">
             <span className="font-body text-body leading-normal truncate text-text-primary">
               {tx.item_name || tx.merchant || tx.main_category}

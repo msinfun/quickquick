@@ -374,7 +374,7 @@ function SwipeableTransactionItem({
         onClick={onSelect}
         className="relative z-10 p-item flex items-center justify-between bg-surface-primary active:bg-surface-glass active:opacity-active transition-all duration-fast ease-apple"
       >
-        <div className="flex items-center gap-item flex-1">
+        <div className="flex items-center gap-item flex-1 min-w-0">
           <div className="size-icon-container rounded-button bg-bg-base flex items-center justify-center relative shrink-0 shadow-inner">
             {isGroup ? <ICON_MAP.Box className="size-icon-md text-brand-primary" /> : getIcon(tx.main_category, tx.sub_category)}
             {/* Logic for getIcon in AccountDetailView is simpler here for now */}
@@ -384,7 +384,7 @@ function SwipeableTransactionItem({
               </div>
             )}
           </div>
-          <div className="flex flex-col flex-1 truncate">
+          <div className="flex flex-col flex-1 min-w-0">
             <span className="font-body text-h3 tracking-tight text-text-primary truncate">
               {isGroup ? entry.merchant : (tx.item_name || tx.merchant || tx.main_category)}
             </span>

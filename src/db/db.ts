@@ -230,10 +230,12 @@ export const deleteTransaction = async (idOrGroupId: number | string) => {
     return await db.transaction('rw', db.transactions, db.accounts, async () => {
       // Revert account balances for each item in group
       for (const tx of txs) {
-        const account = await db.accounts.get(tx.account_id);
-        if (account) {
-          const newBalance = account.current_balance - tx.amount;
-          await db.accounts.update(tx.account_id, { current_balance: newBalance });
+        if (tx.status !== 'pending' && tx.account_id !== undefined) {
+          const account = await db.accounts.get(tx.account_id);
+          if (account) {
+            const newBalance = account.current_balance - tx.amount;
+            await db.accounts.update(tx.account_id, { current_balance: newBalance });
+          }
         }
       }
       // Bulk delete the group
@@ -246,11 +248,13 @@ export const deleteTransaction = async (idOrGroupId: number | string) => {
     
     return await db.transaction('rw', db.transactions, db.accounts, async () => {
       await db.transactions.delete(idOrGroupId);
-      // Revert account balance
-      const account = await db.accounts.get(tx.account_id);
-      if (account) {
-        const newBalance = account.current_balance - tx.amount;
-        await db.accounts.update(tx.account_id, { current_balance: newBalance });
+      // Revert account balance only if it was actually applied to an account
+      if (tx.status !== 'pending' && tx.account_id !== undefined) {
+        const account = await db.accounts.get(tx.account_id);
+        if (account) {
+          const newBalance = account.current_balance - tx.amount;
+          await db.accounts.update(tx.account_id, { current_balance: newBalance });
+        }
       }
     });
   }

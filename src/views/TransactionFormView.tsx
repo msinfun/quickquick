@@ -151,9 +151,11 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
         // 2. Save remaining items
         const savedIds: number[] = [];
         for (const item of remainingItems) {
+          const finalAmount = item.type === 'expense' ? -Math.abs(Number(item.amount)) : Math.abs(Number(item.amount));
           const finalTx = {
             ...item,
             ...sharedInfo,
+            amount: finalAmount,
             group_id: groupId,
             status: "confirmed"
           };
@@ -168,7 +170,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
 
               if (sharedInfo.account_id) {
                 const newAcc = await db.accounts.get(sharedInfo.account_id);
-                if (newAcc) await db.accounts.update(sharedInfo.account_id, { current_balance: newAcc.current_balance + item.amount });
+                if (newAcc) await db.accounts.update(sharedInfo.account_id, { current_balance: newAcc.current_balance + finalAmount });
               }
             }
             await db.transactions.update(item.id, finalTx);
@@ -390,7 +392,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
                             value={item.amount === 0 ? "" : Math.abs(item.amount)}
                             onChange={(e) => {
                               const newItems = [...items];
-                              newItems[idx].amount = (item.amount < 0 ? -1 : 1) * (e.target.value === "" ? 0 : Number(e.target.value));
+                              newItems[idx].amount = (item.type === 'expense' ? -1 : 1) * Math.abs(e.target.value === "" ? 0 : Number(e.target.value));
                               setItems(newItems);
                             }}
                             placeholder="0"
@@ -466,7 +468,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
               // If type changed, sync it and flip amount sign if necessary
               if (item.type !== type) {
                 item.type = type as any;
-                item.amount = -item.amount;
+                item.amount = (type === 'expense' ? -1 : 1) * Math.abs(item.amount);
               }
               
               setItems(newItems);
