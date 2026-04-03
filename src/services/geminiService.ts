@@ -23,6 +23,24 @@ export class GeminiService {
   }
 
   /**
+   * Automatically categorize an item name based on user's categories.
+   */
+  static async categorizeItem(itemName: string, userCategories: any[]): Promise<{ main_category: string; sub_category: string } | null> {
+    const systemPrompt = `你是一個專業的記帳分類助手。請依據使用者提供的預設分類表，將使用者的輸入項目準確分類。\n\n預設分類表：\n${JSON.stringify(userCategories, null, 2)}\n\n請以最合適的分類來回覆，只回傳 JSON，格式如下：\n{"main_category": "對應的主分類", "sub_category": "對應的子分類"}\n如果不確定，回傳你覺得最可能的主分類/子分類。`;
+
+    try {
+      const results = await this.parseExpense(systemPrompt, itemName);
+      if (results && results.length > 0 && results[0].main_category) {
+        return { main_category: results[0].main_category, sub_category: results[0].sub_category || "其他" };
+      }
+      return null;
+    } catch (e) {
+      console.warn("Categorize feature error:", e);
+      return null;
+    }
+  }
+
+  /**
    * Parses user input using Gemini Flash model.
    * @param systemPrompt The instructions for the AI
    * @param userInput The raw text/OCR/voice input from the user

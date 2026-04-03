@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { ChevronLeft, CheckCircle, Clock, Edit2, Trash2, Tag } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle, Clock, Edit2, Trash2, Tag } from "lucide-react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, deleteTransaction } from "@/db/db";
@@ -29,8 +29,30 @@ interface AccountDetailViewProps {
   onBack: () => void;
   onEditAccount: () => void;
   onDeleteAccount: () => void;
-  onStartReconciliation: (transactions: any[]) => void;
+  onStartReconciliation: (txs: Transaction[]) => void;
 }
+
+const getBillingPeriod = (targetDate: Date, cycleDay: number | null) => {
+  const y = targetDate.getFullYear();
+  const m = targetDate.getMonth();
+  const format = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+
+  if (!cycleDay) {
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0, 23, 59, 59);
+    return { startStr: format(start), endStr: format(end) };
+  }
+
+  const endMonthDays = new Date(y, m + 1, 0).getDate();
+  const endDay = Math.min(cycleDay, endMonthDays);
+  const endDate = new Date(y, m, endDay, 23, 59, 59);
+  
+  const prevMonthDays = new Date(y, m, 0).getDate();
+  const prevEndDay = Math.min(cycleDay, prevMonthDays);
+  const startDate = new Date(y, m - 1, prevEndDay + 1, 0, 0, 0);
+
+  return { startStr: format(startDate), endStr: format(endDate) };
+};
 
 export default function AccountDetailView({ 
   account, 
@@ -75,8 +97,53 @@ export default function AccountDetailView({
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
   const [editTx, setEditTx] = useState<any | null>(null);
 
+  const defaultTargetDate = useMemo(() => {
+    if (account?.type !== 'credit_card' || !account.billing_cycle) return new Date();
+    const today = new Date();
+    const cycleDay = account.billing_cycle;
+    const currentMonthEndDay = Math.min(cycleDay, new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate());
+    const currentMonthEndDate = new Date(today.getFullYear(), today.getMonth(), currentMonthEndDay, 23, 59, 59);
+    
+    const target = new Date(today);
+    if (today > currentMonthEndDate) {
+      target.setMonth(target.getMonth() + 1);
+    }
+    return new Date(target.getFullYear(), target.getMonth(), 1);
+  }, [account]);
+
+  const [targetMonth, setTargetMonth] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    if (account) setTargetMonth(defaultTargetDate);
+  }, [defaultTargetDate, account]);
+
+  const { startStr, endStr } = useMemo(() => {
+    const cycleDay = account?.type === 'credit_card' ? account.billing_cycle : null;
+    return getBillingPeriod(targetMonth, cycleDay);
+  }, [targetMonth, account]);
+
+  const periodTransactions = useMemo(() => {
+    return transactions.filter(tx => {
+      const txDateStr = tx.date.split('T')[0].replace(/-/g, '/');
+      return txDateStr >= startStr && txDateStr <= endStr;
+    });
+  }, [transactions, startStr, endStr]);
+
+  const billingInfo = useMemo(() => {
+    if (account?.type !== 'credit_card' || !account.billing_cycle) return null;
+    
+    const unbilledTxs = periodTransactions.filter(tx => tx.status !== 'scheduled');
+    const unbilledAmount = unbilledTxs.reduce((acc, tx) => acc + tx.amount, 0);
+
+    return {
+      startDateStr: startStr,
+      endDateStr: endStr,
+      unbilledAmount
+    };
+  }, [account, periodTransactions, startStr, endStr]);
+
   const groupedTransactions = useMemo(() => {
-    const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sorted = [...periodTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     // 1st Level: Group by Date
     const dateGroups: Record<string, any[]> = {};
@@ -102,14 +169,21 @@ export default function AccountDetailView({
         }
       });
       
-      const groupedEntries = Object.entries(subGroups).map(([id, txs]) => ({
-        type: 'group',
-        id,
-        data: txs,
-        totalAmount: txs.reduce((acc, t) => acc + t.amount, 0),
-        merchant: txs[0].merchant || "多項交易項目",
-        date: txs[0].date
-      }));
+      const groupedEntries: any[] = [];
+      Object.entries(subGroups).forEach(([id, txs]) => {
+        if (txs.length === 1) {
+          ungrouped.push({ type: 'single', data: txs[0], id: txs[0].id });
+        } else {
+          groupedEntries.push({
+            type: 'group',
+            id,
+            data: txs,
+            totalAmount: txs.reduce((acc, t) => acc + t.amount, 0),
+            merchant: txs[0].merchant || "多項交易項目",
+            date: txs[0].date
+          });
+        }
+      });
 
       const finalEntries = [...ungrouped, ...groupedEntries].sort((a, b) => {
         const idA = a.type === 'single' ? (a.data.id || 0) : 0;
@@ -119,7 +193,7 @@ export default function AccountDetailView({
 
       return [date, finalEntries] as [string, any[]];
     });
-  }, [transactions]);
+  }, [periodTransactions]);
 
 
   const handleEdit = (tx: any) => {
@@ -168,31 +242,95 @@ export default function AccountDetailView({
           </div>
           <div className="flex flex-col overflow-hidden">
             <h1 className="text-h3 font-h3 tracking-tight text-text-primary leading-tight whitespace-nowrap truncate">{account.name}</h1>
-            <span className="text-text-tertiary text-caption font-caption uppercase tracking-wide truncate">結帳日：每月 {account.billing_cycle} 號</span>
+            <span className="text-text-tertiary text-caption font-caption uppercase tracking-wide truncate">
+              {account.type === 'credit_card' ? `結帳日：每月 ${account.billing_cycle} 號` : `帳單週期日：每月 ${account.billing_cycle} 號`}
+            </span>
           </div>
         </div>
-        <button onClick={onEditAccount} className="p-inner -mr-inner rounded-button active:bg-surface-glass-heavy text-brand-primary transition-all duration-normal ease-apple active:opacity-active">
-          <Edit2 className="size-icon-md" />
-        </button>
+        <div className="flex items-center gap-1 -mr-inner">
+          <button onClick={onEditAccount} className="p-inner rounded-button active:bg-surface-glass-heavy text-text-primary transition-all duration-normal ease-apple active:opacity-active">
+            <Edit2 className="size-icon-md" />
+          </button>
+          <button 
+            onClick={() => {
+              setConfirmModal({
+                isOpen: true,
+                title: "刪除帳戶",
+                message: `確定要刪除「${account.name}」帳戶嗎？所有明細也將一併移除。`,
+                onConfirm: onDeleteAccount
+              });
+            }}
+            className="p-inner rounded-button active:bg-semantic-danger/10 text-semantic-danger transition-all duration-normal ease-apple active:opacity-active"
+          >
+            <Trash2 className="size-icon-md" />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-screen pb-nav-clearance flex flex-col gap-section bg-bg-base">
-        <div className="bg-surface-primary rounded-card p-item flex flex-col gap-item relative overflow-hidden group border border-hairline border-border-subtle">
-          <p className="text-text-tertiary font-caption uppercase tracking-wide text-caption">目前餘額</p>
-          <h2 className="text-h2 font-h2 tracking-tight tabular-nums text-text-primary leading-none">$ {account.current_balance.toLocaleString()}</h2>
-        </div>
+        {account.type === 'credit_card' && billingInfo ? (
+          <div className="flex flex-col gap-item shrink-0">
+            {/* 信用卡總覽卡片 */}
+            <div className="bg-surface-primary rounded-card p-item flex flex-col gap-item relative overflow-hidden group border border-hairline border-border-subtle shadow-sm">
+              <div className="flex justify-between items-center">
+                <p className="text-text-tertiary font-caption uppercase tracking-wide text-caption">累積未繳總額</p>
+                {account.payment_due_day && (
+                  <span className="text-caption font-caption text-text-tertiary">
+                    繳款日: {account.payment_due_day} 號
+                  </span>
+                )}
+              </div>
+              <h2 className="text-h2 font-h2 tracking-tight tabular-nums text-semantic-danger leading-none">
+                ${Math.abs(account.current_balance).toLocaleString()}
+              </h2>
+            </div>
+            {/* 本期未出帳 */}
+            <div className="bg-surface-glass rounded-card p-item flex flex-col gap-1 relative overflow-hidden border border-hairline border-border-subtle">
+              <div className="flex items-center text-text-secondary">
+                <span className="font-caption uppercase tracking-wide text-caption">本期未出帳試算</span>
+              </div>
+              <h3 className="text-h3 font-h3 tracking-tight tabular-nums text-text-primary mt-1">
+                ${Math.abs(billingInfo.unbilledAmount).toLocaleString()}
+              </h3>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-surface-primary rounded-card p-item flex flex-col gap-item relative overflow-hidden group border border-hairline border-border-subtle shrink-0">
+            <p className="text-text-tertiary font-caption uppercase tracking-wide text-caption">目前餘額</p>
+            <h2 className="text-h2 font-h2 tracking-tight tabular-nums leading-none text-text-primary">
+              ${Math.abs(account.current_balance).toLocaleString()}
+            </h2>
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <h3 className="text-h3 font-h3 text-text-primary tracking-tight">近期明細</h3>
-            <span className="text-brand-primary font-caption text-caption uppercase tracking-wide">{transactions.length} 筆紀錄</span>
+          <div className="flex flex-col gap-1.5 w-full">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-h3 font-h3 text-text-primary tracking-tight">帳期明細</h3>
+                <div className="flex bg-surface-glass p-0.5 rounded-button border border-hairline border-border-subtle overflow-hidden relative z-10">
+                  <button onClick={() => setTargetMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} className="px-1.5 py-1 rounded-inner hover:bg-brand-primary/10 active:opacity-50 text-text-tertiary">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-text-primary font-caption px-1 flex items-center justify-center min-w-[50px] text-[11px] font-medium tracking-wide">
+                    {targetMonth.getFullYear()}-{String(targetMonth.getMonth() + 1).padStart(2, '0')}
+                  </span>
+                  <button onClick={() => setTargetMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} className="px-1.5 py-1 rounded-inner hover:bg-brand-primary/10 active:opacity-50 text-text-tertiary">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <button 
+                onClick={() => onStartReconciliation(periodTransactions as any)}
+                className="px-section py-item rounded-button bg-surface-primary border border-border-subtle text-text-secondary font-body text-caption active:bg-surface-glass active:opacity-active transition-all duration-fast ease-apple shadow-dropdown"
+              >
+                開始對帳
+              </button>
+            </div>
+            <span className="text-text-tertiary font-caption text-caption uppercase tracking-wide">
+              {periodTransactions.length} 筆紀錄 · {startStr.replace(/^\d{4}\//, '')} ~ {endStr.replace(/^\d{4}\//, '')}
+            </span>
           </div>
-          <button 
-            onClick={() => onStartReconciliation(transactions)}
-            className="px-section py-item rounded-button bg-surface-primary border border-border-subtle text-text-secondary font-body text-caption active:bg-surface-glass active:opacity-active transition-all duration-fast ease-apple shadow-dropdown"
-          >
-            開始對帳
-          </button>
         </div>
 
         <section className="flex flex-col gap-section">
@@ -201,9 +339,8 @@ export default function AccountDetailView({
           ) : (
             groupedTransactions.map(([date, entries]) => (
               <div key={date} className="flex flex-col gap-inner">
-                <div className="flex justify-between items-center mb-inner">
+                <div className="mb-inner">
                   <span className="text-caption font-caption text-text-tertiary tracking-wide uppercase">{date}</span>
-                  <span className="text-caption font-caption text-text-tertiary uppercase tracking-wide">{entries.length} 筆</span>
                 </div>
                 <div className="bg-surface-primary rounded-card border border-hairline border-border-subtle divide-y-hairline divide-border-subtle overflow-hidden">
                   {entries.map((entry) => (
@@ -227,22 +364,7 @@ export default function AccountDetailView({
           )}
         </section>
 
-        <div className="mt-section w-full flex justify-center pb-item">
-          <button 
-            onClick={() => {
-              setConfirmModal({
-                isOpen: true,
-                title: "刪除帳戶",
-                message: `確定要刪除「${account.name}」帳戶嗎？所有明細也將一併移除。`,
-                onConfirm: onDeleteAccount
-              });
-            }}
-            className="flex items-center gap-item px-section py-item rounded-button bg-semantic-danger/10 text-semantic-danger font-h3 active:bg-semantic-danger/20 active:opacity-active transition-all duration-fast ease-apple border border-semantic-danger/20"
-          >
-            <Trash2 className="size-icon-md" />
-            刪除帳戶
-          </button>
-        </div>
+
       </div>
 
       <AnimatePresence>
@@ -261,7 +383,8 @@ export default function AccountDetailView({
             }}
             onDuplicate={async () => {
               const txs = Array.isArray(selectedTx) ? selectedTx : [selectedTx];
-              const newGroupId = txs.length > 1 ? crypto.randomUUID() : undefined;
+              // Use Math.random for broad mobile compatibility instead of crypto.randomUUID()
+              const newGroupId = txs.length > 1 ? (Math.random().toString(36).substring(2, 11) + Date.now().toString(36)) : undefined;
               const now = new Date();
               const dateStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
               
@@ -328,6 +451,15 @@ function SwipeableTransactionItem({
   const tx = isGroup ? entry.data[0] : entry.data;
   const amount = isGroup ? entry.totalAmount : tx.amount;
 
+  let displayStatus = tx.status;
+  if (isGroup) {
+    const allReconciled = entry.data.every((t: any) => t.status === "reconciled");
+    const anyConfirmedOrReconciled = entry.data.some((t: any) => t.status === "confirmed" || t.status === "reconciled");
+    if (allReconciled) displayStatus = "reconciled";
+    else if (anyConfirmedOrReconciled) displayStatus = "confirmed";
+    else displayStatus = "pending";
+  }
+
   const buttonOpacity = useTransform(x, [-140, -40, 0], [1, 0, 0]);
   const buttonScale = useTransform(x, [-140, -40, 0], [1, 0.5, 0.5]);
 
@@ -379,7 +511,7 @@ function SwipeableTransactionItem({
             {isGroup ? <ICON_MAP.Box className="size-icon-md text-brand-primary" /> : getIcon(tx.main_category, tx.sub_category)}
             {/* Logic for getIcon in AccountDetailView is simpler here for now */}
             {isGroup && (
-              <div className="absolute -top-1 -right-1 bg-brand-primary text-bg-base text-caption font-h2 size-icon-sm rounded-button flex items-center justify-center border-thick border-bg-base">
+              <div className="absolute -top-1 -right-1 bg-surface-glass-heavy text-text-secondary text-caption font-h2 size-icon-sm rounded-button flex items-center justify-center border-thick border-bg-base">
                 {entry.data.length}
               </div>
             )}
@@ -388,28 +520,35 @@ function SwipeableTransactionItem({
             <span className="font-body text-h3 tracking-tight text-text-primary truncate">
               {isGroup ? entry.merchant : (tx.item_name || tx.merchant || tx.main_category)}
             </span>
-            <span className="text-text-tertiary text-caption font-caption mt-0.5 truncate tracking-wide">
-              {isGroup 
-                ? Array.from(new Set(entry.data.map((t: any) => t.main_category))).join(' · ')
-                : `${tx.main_category} · ${tx.sub_category}`
-              }
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-text-tertiary text-caption font-caption truncate tracking-wide shrink">
+                {isGroup 
+                  ? Array.from(new Set(entry.data.map((t: any) => t.main_category))).join(' · ')
+                  : `${tx.main_category} · ${tx.sub_category}`
+                }
+              </span>
+              {(displayStatus === "confirmed" || displayStatus === "reconciled") && (
+                <span className={`text-[10px] px-1 py-[1px] rounded-[3px] tracking-wide shrink-0 leading-none ${
+                  displayStatus === "reconciled" 
+                    ? "text-text-secondary bg-surface-glass-heavy" 
+                    : "text-text-tertiary bg-transparent border border-border-subtle"
+                }`}>
+                  {displayStatus === "reconciled" ? "已對帳" : "已確認"}
+                </span>
+              )}
+              {displayStatus === "scheduled" && (
+                <span className="text-[10px] px-1 py-[1px] rounded-[3px] tracking-wide shrink-0 leading-none text-text-tertiary bg-surface-glass-heavy border border-border-subtle">
+                  未入帳
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-inner shrink-0 pl-item">
+        <div className="flex items-center shrink-0 pl-item">
           <span className="font-h2 text-h3 tabular-nums tracking-tighter text-text-primary">
-            $ {Math.abs(amount).toLocaleString()}
+            ${Math.abs(amount).toLocaleString()}
           </span>
-          {(tx.status === "confirmed" || tx.status === "reconciled") && !isGroup && (
-            <span className={`text-caption font-caption px-inner py-micro rounded-button uppercase tracking-wide ${
-              tx.status === "reconciled" 
-                ? "text-brand-primary bg-brand-primary/20 border border-brand-primary/20" 
-                : "text-brand-primary bg-brand-primary/10"
-            }`}>
-              {tx.status === "reconciled" ? "已對帳" : "已確認"}
-            </span>
-          )}
         </div>
       </motion.div>
     </div>

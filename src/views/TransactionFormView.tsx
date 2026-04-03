@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Info, BrainCircuit, Mic, Calendar, Database, Box, Tag, CreditCard, Hash, LayoutGrid, AlertTriangle, Loader2, Save, Plus, Trash2, ArrowRight, X, Repeat, Store, CheckCircle, Percent } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, addTransaction } from "@/db/db";
+import { db, addTransaction, deleteTransaction } from "@/db/db";
+import SwipeableDelete from "@/components/SwipeableDelete";
 import { ICON_MAP } from "@/constants/icons";
 import { calculateNextDate } from "@/services/dateUtils";
+import { GeminiService } from "@/services/geminiService";
 
 interface Transaction {
   id?: number;
@@ -72,6 +74,16 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
   });
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [groupEditPrompt, setGroupEditPrompt] = useState<{isOpen: boolean, relatedCount: number} | null>(null);
+  const [loadingCategoryIdx, setLoadingCategoryIdx] = useState<number | null>(null);
+
+  const isExistingInstallment = useMemo(() => {
+    if (!initialData) return false;
+    const dataArray = Array.isArray(initialData) ? initialData : [initialData];
+    if (dataArray.length === 0) return false;
+    const firstTx = dataArray[0];
+    return !!(firstTx.id && firstTx.group_id && firstTx.item_name?.includes("期)"));
+  }, [initialData]);
 
   // Fetch contextual data
   const categoriesSetting = useLiveQuery(() =>
@@ -126,64 +138,101 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
       return;
     }
 
+    // 檢查是否為「單筆編輯」且「屬於某個群組/分期」
+    const firstItem = remainingItems[0];
+    if (remainingItems.length === 1 && firstItem.group_id && firstItem.id) {
+      const relatedCount = await db.transactions.where('group_id').equals(firstItem.group_id).count();
+      if (relatedCount > 1) {
+        setGroupEditPrompt({ isOpen: true, relatedCount });
+        return; // 暫停儲存，等待使用者選擇
+      }
+    }
+    
+    await executeSave(false);
+  };
+
+  const executeSave = async (applyToAll: boolean) => {
     setIsSaving(true);
+    setGroupEditPrompt(null);
     try {
+      const remainingItems = items.filter(item => item.amount !== 0 || item.item_name);
 
       // Determine group_id: 
       // - If multiple items remain, use existing or new UUID
-      // - If only one item remains, clear group_id (making it a single tx)
-      const groupId = remainingItems.length > 1 ? (remainingItems[0].group_id || crypto.randomUUID()) : undefined;
+      // - If only one item remains, retain its group_id instead of clearing it
+      const groupId = remainingItems.length > 1 ? (remainingItems[0].group_id || generateId()) : remainingItems[0]?.group_id;
 
-      await db.transaction('rw', [db.transactions, db.accounts], async () => {
+      await db.transaction('rw', [db.transactions, db.accounts, db.recurringRules], async () => {
         // 1. Physically delete items removed in UI
         if (deletedIds.length > 0) {
-          // We need to revert balances for these deleted items if they were already confirmed
           for (const id of deletedIds) {
-            const old = await db.transactions.get(id);
-            if (old && old.account_id && (old.status === 'confirmed' || old.status === 'completed' || old.status === 'reconciled')) {
-              const acc = await db.accounts.get(old.account_id);
-              if (acc) await db.accounts.update(old.account_id, { current_balance: acc.current_balance - old.amount });
-            }
+            await deleteTransaction(id);
           }
-          await db.transactions.bulkDelete(deletedIds);
         }
 
-        // 2. Save remaining items
-        const savedIds: number[] = [];
-        for (const item of remainingItems) {
-          const finalAmount = item.type === 'expense' ? -Math.abs(Number(item.amount)) : Math.abs(Number(item.amount));
-          const finalTx = {
-            ...item,
-            ...sharedInfo,
-            amount: finalAmount,
-            group_id: groupId,
-            status: "confirmed"
-          };
+        // 【新增】群組連動修改邏輯 (必須在處理當前 item 前執行，確保舊帳戶餘額正確回退)
+        if (applyToAll && groupId) {
+          const relatedTxs = await db.transactions.where('group_id').equals(groupId).toArray();
+          for (const rTx of relatedTxs) {
+            if (rTx.id === remainingItems[0].id) continue; // 當前編輯的這筆在下方處理
 
-          if (item.id) {
-            const old = await db.transactions.get(item.id);
-            if (old) {
-              if (old.account_id) {
-                const oldAcc = await db.accounts.get(old.account_id);
-                if (oldAcc) await db.accounts.update(old.account_id, { current_balance: oldAcc.current_balance - old.amount });
+            // 如果這筆分期狀態是已扣款，需回退舊帳戶餘額並扣除新帳戶餘額
+            if (['confirmed', 'completed', 'reconciled'].includes(rTx.status || '')) {
+              if (rTx.account_id) {
+                const oldAcc = await db.accounts.get(rTx.account_id);
+                if (oldAcc) await db.accounts.update(rTx.account_id, { current_balance: oldAcc.current_balance - rTx.amount });
               }
-
               if (sharedInfo.account_id) {
                 const newAcc = await db.accounts.get(sharedInfo.account_id);
-                if (newAcc) await db.accounts.update(sharedInfo.account_id, { current_balance: newAcc.current_balance + finalAmount });
+                if (newAcc) await db.accounts.update(sharedInfo.account_id, { current_balance: newAcc.current_balance + rTx.amount });
               }
             }
-            await db.transactions.update(item.id, finalTx);
-            savedIds.push(item.id);
-          } else {
-            const newId = (await addTransaction(finalTx)) as number;
-            savedIds.push(newId);
+
+            // 更新該期交易資料
+            await db.transactions.update(rTx.id!, {
+              account_id: sharedInfo.account_id,
+              merchant: sharedInfo.merchant,
+              note: sharedInfo.note,
+              status: "confirmed"
+            });
           }
         }
 
-        // 3. Handle Advanced Rules
-        if (advancedConfig.enabled) {
-          const frequencyMap: Record<string, "daily" | "weekly" | "monthly" | "bi-monthly" | "quarterly" | "yearly"> = {
+        if (advancedConfig.enabled && advancedConfig.type === 'installment') {
+          for (const item of remainingItems) {
+            if (item.id) {
+              const old = await db.transactions.get(item.id);
+              if (old) {
+                if (old.account_id && (old.status === 'confirmed' || old.status === 'completed' || old.status === 'reconciled')) {
+                  const acc = await db.accounts.get(old.account_id);
+                  if (acc) await db.accounts.update(old.account_id, { current_balance: acc.current_balance - old.amount });
+                }
+                await db.transactions.delete(item.id); // This is part of installment re-gen, balance revert already handled above
+              }
+            }
+          }
+
+          const N = advancedConfig.totalInstallments;
+          const total = advancedConfig.totalAmount || totalAmount;
+          const baseItem = remainingItems[0] || items[0];
+          const sign = baseItem.type === 'expense' ? -1 : (baseItem.type === 'income' ? 1 : -1);
+          const absoluteTotal = Math.abs(total);
+          
+          let baseAmount = Math.floor(absoluteTotal / N);
+          if (advancedConfig.roundingMethod === 'ceil') {
+            baseAmount = Math.ceil(absoluteTotal / N);
+          } else if (advancedConfig.roundingMethod === 'round') {
+            baseAmount = Math.round(absoluteTotal / N);
+          }
+          
+          const remainder = absoluteTotal - (baseAmount * N);
+          const installmentGroupId = generateId();
+          
+          const today = new Date();
+          const todayStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+
+          // Create tracking rule for AutomationListView
+          const freqMap: Record<string, string> = {
             'day': 'daily',
             'week': 'weekly',
             'month': 'monthly',
@@ -193,27 +242,126 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
           const ruleId = await db.recurringRules.add({
             template_transaction: {
               ...sharedInfo,
-              group_id: groupId,
+              group_id: installmentGroupId,
               items: remainingItems.map(({ id, ...rest }) => rest)
             } as any,
-            frequency: frequencyMap[advancedConfig.frequency] || 'monthly',
-            type: advancedConfig.type,
-            interval: advancedConfig.interval,
-            day_of_cycle: advancedConfig.dayOfCycle,
-            occurrence_count: advancedConfig.occurrenceCount > 0 ? advancedConfig.occurrenceCount : undefined,
-            total_amount: advancedConfig.type === 'installment' ? (advancedConfig.totalAmount || totalAmount) : undefined,
-            interest_rate: advancedConfig.interestRate,
-            rounding_method: advancedConfig.roundingMethod,
-            remainder_strategy: advancedConfig.remainderStrategy,
-            total_installments: advancedConfig.type === 'installment' ? advancedConfig.totalInstallments : undefined,
-            installments_paid: advancedConfig.type === 'installment' ? 1 : undefined,
-            start_date: sharedInfo.date,
-            next_generation_date: calculateNextDate(sharedInfo.date, advancedConfig.frequency, advancedConfig.interval),
+            frequency: (freqMap[advancedConfig.frequency] || 'monthly') as any,
+            type: "installment",
+            interval: advancedConfig.interval || 1,
+            total_amount: total,
+            total_installments: N,
+            installments_paid: 1, // Phase 1 creates the first install!
+            start_date: todayStr,
+            next_generation_date: calculateNextDate(todayStr, (freqMap[advancedConfig.frequency] || 'monthly') as any, advancedConfig.interval),
             is_active: true
           });
 
-          if (savedIds.length > 0) {
-            await db.transactions.bulkUpdate(savedIds.map(id => ({ key: id, changes: { rule_id: ruleId } })));
+          // Prepare Period 1
+          const [y, m, d] = sharedInfo.date.split('/').map(Number);
+          const ty = y;
+          const tm = String(m).padStart(2, '0');
+          const td = String(d).padStart(2, '0');
+          const currentPeriodDateStr = `${ty}/${tm}/${td}`;
+
+          let amount1 = baseAmount;
+          if (advancedConfig.remainderStrategy === 'first') amount1 += remainder;
+          const finalAmount1 = amount1 * sign;
+
+          const baseName = baseItem.item_name || baseItem.main_category;
+          const periodName = `${baseName} (第 1/${N} 期)`;
+          const status = currentPeriodDateStr <= todayStr ? "confirmed" : "pending"; // First period can be pending if in future
+
+          const finalTx = {
+            ...baseItem,
+            ...sharedInfo,
+            date: currentPeriodDateStr,
+            amount: finalAmount1,
+            item_name: periodName,
+            group_id: installmentGroupId,
+            status: status,
+            rule_id: ruleId as number
+          };
+          
+          delete finalTx.id;
+          delete (finalTx as any).tempId;
+
+          await db.transactions.add(finalTx);
+
+          if (status === "confirmed" && sharedInfo.account_id) {
+             const acc = await db.accounts.get(sharedInfo.account_id);
+             if (acc) {
+               await db.accounts.update(sharedInfo.account_id, { current_balance: acc.current_balance + finalAmount1 });
+             }
+          }
+        } else {
+          // 2. Save remaining items
+          const savedIds: number[] = [];
+          for (const item of remainingItems) {
+            const finalAmount = item.type === 'expense' ? -Math.abs(Number(item.amount)) : Math.abs(Number(item.amount));
+            const finalTx = {
+              ...item,
+              ...sharedInfo,
+              amount: finalAmount,
+              group_id: groupId,
+              status: "confirmed"
+            };
+
+            if (item.id) {
+              const old = await db.transactions.get(item.id);
+              if (old) {
+                if (old.account_id && ['confirmed', 'completed', 'reconciled'].includes(old.status || '')) {
+                  const oldAcc = await db.accounts.get(old.account_id);
+                  if (oldAcc) await db.accounts.update(old.account_id, { current_balance: oldAcc.current_balance - old.amount });
+                }
+
+                  const isNewApplied = finalTx.status === 'confirmed' || finalTx.status === 'completed' || finalTx.status === 'reconciled';
+                  if (sharedInfo.account_id && isNewApplied) {
+                    const newAcc = await db.accounts.get(sharedInfo.account_id);
+                    if (newAcc) await db.accounts.update(sharedInfo.account_id, { current_balance: newAcc.current_balance + finalAmount });
+                  }
+                }
+              await db.transactions.update(item.id, finalTx);
+              savedIds.push(item.id);
+            } else {
+              const newId = (await addTransaction(finalTx)) as number;
+              savedIds.push(newId);
+            }
+          }
+
+          // 3. Handle Advanced Rules
+          if (advancedConfig.enabled) {
+            const frequencyMap: Record<string, "daily" | "weekly" | "monthly" | "bi-monthly" | "quarterly" | "yearly"> = {
+              'day': 'daily',
+              'week': 'weekly',
+              'month': 'monthly',
+              'year': 'yearly'
+            };
+
+            const ruleId = await db.recurringRules.add({
+              template_transaction: {
+                ...sharedInfo,
+                group_id: groupId,
+                items: remainingItems.map(({ id, ...rest }) => rest)
+              } as any,
+              frequency: frequencyMap[advancedConfig.frequency] || 'monthly',
+              type: advancedConfig.type,
+              interval: advancedConfig.interval,
+              day_of_cycle: advancedConfig.dayOfCycle,
+              occurrence_count: advancedConfig.occurrenceCount > 0 ? advancedConfig.occurrenceCount : undefined,
+              total_amount: advancedConfig.type === 'installment' ? (advancedConfig.totalAmount || totalAmount) : undefined,
+              interest_rate: advancedConfig.interestRate,
+              rounding_method: advancedConfig.roundingMethod,
+              remainder_strategy: advancedConfig.remainderStrategy,
+              total_installments: advancedConfig.type === 'installment' ? advancedConfig.totalInstallments : undefined,
+              installments_paid: advancedConfig.type === 'installment' ? 1 : undefined,
+              start_date: sharedInfo.date,
+              next_generation_date: calculateNextDate(sharedInfo.date, advancedConfig.frequency, advancedConfig.interval),
+              is_active: true
+            });
+
+            if (savedIds.length > 0) {
+              await db.transactions.bulkUpdate(savedIds.map(id => ({ key: id, changes: { rule_id: ruleId } })));
+            }
           }
         }
       });
@@ -261,8 +409,8 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
       <div className="flex-1 overflow-y-auto no-scrollbar px-screen pb-nav-clearance flex flex-col gap-section bg-bg-base">
         {/* Top Amount Region */}
         <div className="flex flex-col items-center py-[var(--size-icon-container)]">
-          <span className={`text-[2.5rem] font-h2 tabular-nums tracking-tight leading-none ${totalAmount < 0 ? 'text-text-primary' : 'text-brand-primary'}`}>
-            {totalAmount < 0 ? '-' : totalAmount > 0 ? '+' : ''}$ {Math.abs(totalAmount).toLocaleString()}
+          <span className={`text-[2.5rem] font-h2 tabular-nums tracking-tight leading-none ${totalAmount < 0 ? 'text-semantic-danger' : 'text-brand-primary'}`}>
+            ${Math.abs(totalAmount).toLocaleString()}
           </span>
           <div className="mt-item px-item py-1.5 rounded-button bg-surface-glass border border-hairline border-border-subtle text-caption font-caption uppercase tracking-wide text-text-tertiary">
             編輯總金額與共用資訊
@@ -316,12 +464,14 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
           <div className="flex justify-between items-center mb-inner">
             <span className="text-caption font-caption text-text-tertiary uppercase tracking-wide leading-none">編輯品項列表</span>
             <div className="flex items-center gap-item">
-              <button
-                onClick={() => setShowAdvancedModal(true)}
-                className={`text-caption font-h3 px-item py-1.5 rounded-button flex items-center gap-1 active:scale-95 transition-all duration-fast ease-apple ${advancedConfig.enabled ? 'bg-brand-primary text-bg-base' : 'text-brand-primary bg-surface-glass border border-border-subtle'}`}
-              >
-                <Repeat className="size-icon-sm" /> 進階
-              </button>
+              {!isExistingInstallment && (
+                <button
+                  onClick={() => setShowAdvancedModal(true)}
+                  className={`text-caption font-h3 px-item py-1.5 rounded-button flex items-center gap-1 active:scale-95 transition-all duration-fast ease-apple ${advancedConfig.enabled ? 'bg-brand-primary text-bg-base' : 'text-brand-primary bg-surface-glass border border-border-subtle'}`}
+                >
+                  <Repeat className="size-icon-sm" /> 進階
+                </button>
+              )}
               <button
                 onClick={() => setItems(prev => [{ ...items[0], id: undefined, tempId: generateId(), amount: 0, item_name: "" } as any, ...prev])}
                 className="text-caption font-caption text-brand-primary px-item py-1.5 rounded-button flex items-center gap-1 active:scale-95 transition-all duration-normal ease-apple border border-brand-primary/20"
@@ -344,79 +494,93 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
                     exit={{ opacity: 0, x: -200, height: 0 }}
                     className="relative overflow-hidden"
                   >
-                    <div className="absolute inset-0 bg-semantic-danger flex justify-end items-center pr-8">
-                      <Trash2 className="size-icon-lg text-text-primary" />
-                    </div>
-
-                    <motion.div
-                      drag="x"
-                      dragConstraints={{ left: -100, right: 0 }}
-                      dragElastic={0.1}
-                      onDragEnd={(_, info) => {
-                        if (info.offset.x < -60) {
-                          const itemToDelete = items[idx];
-                          if (itemToDelete.id) setDeletedIds(prev => [...prev, itemToDelete.id!]);
-                          setItems(prev => prev.filter((_, i) => i !== idx));
-                        }
-                        setSwipedId(null);
+                    <SwipeableDelete
+                      onDelete={() => {
+                        const itemToDelete = items[idx];
+                        if (itemToDelete.id) setDeletedIds(prev => [...prev, itemToDelete.id!]);
+                        setItems(prev => prev.filter((_, i) => i !== idx));
                       }}
-                      animate={{ x: swipedId === itemKey ? -100 : 0 }}
-                      className="w-full p-item flex flex-col gap-inner bg-surface-primary active:bg-surface-glass-heavy transition-all duration-normal ease-apple border-b border-hairline border-border-subtle z-10 relative"
+                      isOpen={swipedId === itemKey}
+                      onOpenStateChange={(open) => setSwipedId(open ? itemKey : null)}
                     >
-                      <div className="flex items-center gap-item">
-                        <input
-                          className="w-full bg-bg-base border border-hairline border-border-subtle rounded-input p-item text-body font-body text-text-primary placeholder:text-text-tertiary/40 focus:border-brand-primary/50 transition-all outline-none"
-                          value={item.item_name || ""}
-                          onChange={(e) => {
-                            const newItems = [...items];
-                            newItems[idx].item_name = e.target.value;
-                            setItems(newItems);
-                          }}
-                          placeholder="品項名稱..."
-                        />
-                        <div className="flex items-center shrink-0 relative" style={{ width: "120px" }}>
-                          <span className={`absolute left-item font-h3 ${
-                            item.type === 'expense' ? 'text-semantic-danger' : 
-                            item.type === 'income' ? 'text-brand-primary' : 
-                            'text-text-tertiary'
-                          }`}>$</span>
+                      <div className="w-full p-item flex flex-col gap-inner bg-surface-primary active:bg-surface-glass-heavy transition-all duration-normal ease-apple border-b border-hairline border-border-subtle">
+                        <div className="flex items-center gap-item">
                           <input
-                            type="number"
-                            inputMode="decimal"
-                            className={`w-full bg-bg-base border border-hairline border-border-subtle rounded-input p-item text-right text-h3 font-h3 outline-none focus:border-brand-primary/50 transition-all tabular-nums ${
+                            className="w-full bg-bg-base border border-hairline border-border-subtle rounded-input p-item text-body font-body text-text-primary placeholder:text-text-tertiary/40 focus:border-brand-primary/50 transition-all outline-none"
+                            value={item.item_name || ""}
+                            onChange={(e) => {
+                              const newItems = [...items];
+                              newItems[idx].item_name = e.target.value;
+                              setItems(newItems);
+                            }}
+                            onBlur={async (e) => {
+                              const val = e.target.value.trim();
+                              if (!val || val === "菜市場" || val === "超市" || val === "早餐") return;
+                              
+                              setLoadingCategoryIdx(idx);
+                              try {
+                                const categories = (await db.settings.where("key").equals("categories").first())?.value || [];
+                                const res = await GeminiService.categorizeItem(val, categories);
+                                if (res) {
+                                  setItems(currentItems => {
+                                    const updated = [...currentItems];
+                                    if (updated[idx] && updated[idx].item_name?.trim() === val) {
+                                      updated[idx].main_category = res.main_category || updated[idx].main_category;
+                                      updated[idx].sub_category = res.sub_category || updated[idx].sub_category;
+                                    }
+                                    return updated;
+                                  });
+                                }
+                              } finally {
+                                setLoadingCategoryIdx(null);
+                              }
+                            }}
+                            placeholder="品項名稱..."
+                          />
+                          <div className="flex items-center shrink-0 relative" style={{ width: "120px" }}>
+                            <span className={`absolute left-item font-h3 ${
                               item.type === 'expense' ? 'text-semantic-danger' : 
                               item.type === 'income' ? 'text-brand-primary' : 
                               'text-text-tertiary'
-                            }`}
-                            style={{ paddingLeft: "40px" }}
-                            value={item.amount === 0 ? "" : Math.abs(item.amount)}
-                            onChange={(e) => {
-                              const newItems = [...items];
-                              newItems[idx].amount = (item.type === 'expense' ? -1 : 1) * Math.abs(e.target.value === "" ? 0 : Number(e.target.value));
-                              setItems(newItems);
-                            }}
-                            placeholder="0"
-                          />
+                            }`}>$</span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              className={`w-full bg-bg-base border border-hairline border-border-subtle rounded-input p-item text-right text-h3 font-h3 outline-none focus:border-brand-primary/50 transition-all tabular-nums ${
+                                item.type === 'expense' ? 'text-semantic-danger' : 
+                                item.type === 'income' ? 'text-brand-primary' : 
+                                'text-text-tertiary'
+                              }`}
+                              style={{ paddingLeft: "40px" }}
+                              value={item.amount === 0 ? "" : Math.abs(item.amount)}
+                              onChange={(e) => {
+                                const newItems = [...items];
+                                newItems[idx].amount = (item.type === 'expense' ? -1 : 1) * Math.abs(e.target.value === "" ? 0 : Number(e.target.value));
+                                setItems(newItems);
+                              }}
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={() => setPickingCategoryIdx(idx)}
+                            className={`flex items-center gap-inner rounded-button bg-bg-base border border-hairline border-border-subtle active:scale-[0.98] transition-all group/badge ${loadingCategoryIdx === idx ? 'opacity-70 animate-pulse' : ''}`}
+                            style={{ padding: "6px 12px" }}
+                          >
+                            <div className="size-icon-md flex shrink-0 rounded-inner bg-bg-base items-center justify-center text-brand-primary">
+                              {loadingCategoryIdx === idx ? <Loader2 className="size-icon-sm animate-spin" /> : renderIcon(getIconName(item.main_category, item.sub_category), "size-icon-sm")}
+                            </div>
+                            <div className="flex items-center gap-inner overflow-hidden">
+                              <span className="text-caption font-medium text-text-secondary whitespace-nowrap">{item.main_category}</span>
+                              <ChevronRight className="size-icon-sm text-text-tertiary shrink-0" />
+                              <span className="text-caption font-medium text-text-secondary truncate">{item.sub_category}</span>
+                            </div>
+                          </button>
                         </div>
                       </div>
-
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => setPickingCategoryIdx(idx)}
-                          className="flex items-center gap-inner rounded-button bg-bg-base border border-hairline border-border-subtle active:scale-[0.98] transition-all group/badge"
-                          style={{ padding: "6px 12px" }}
-                        >
-                          <div className="size-icon-md flex shrink-0 rounded-inner bg-bg-base items-center justify-center text-brand-primary">
-                            {renderIcon(getIconName(item.main_category, item.sub_category), "size-icon-sm")}
-                          </div>
-                          <div className="flex items-center gap-inner overflow-hidden">
-                            <span className="text-caption font-medium text-text-secondary whitespace-nowrap">{item.main_category}</span>
-                            <ChevronRight className="size-icon-sm text-text-tertiary shrink-0" />
-                            <span className="text-caption font-medium text-text-secondary truncate">{item.sub_category}</span>
-                          </div>
-                        </button>
-                      </div>
-                    </motion.div>
+                    </SwipeableDelete>
                   </motion.div>
                 );
               })}
@@ -497,6 +661,33 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
               >
                 我知道了
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {groupEditPrompt && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-section bg-bg-base/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-surface-primary border border-border-subtle w-full max-w-sm p-section flex flex-col items-center gap-item text-center rounded-card shadow-dropdown ease-spring"
+            >
+              <h3 className="text-h2 font-h2 text-text-primary leading-tight">連動修改</h3>
+              <p className="text-text-tertiary text-body leading-relaxed">
+                這是一筆分期或關聯交易。請問是否要將您修改的<br/><strong className="text-text-primary">帳戶、商家與備註</strong><br/>套用至全部 {groupEditPrompt.relatedCount} 筆關聯紀錄？
+              </p>
+              <div className="flex flex-col gap-inner w-full mt-2">
+                <button onClick={() => executeSave(true)} className="w-full py-item rounded-button bg-brand-primary text-bg-base font-h3 active:scale-95 transition-all ease-apple">
+                  套用至全部 {groupEditPrompt.relatedCount} 筆
+                </button>
+                <button onClick={() => executeSave(false)} className="w-full py-item rounded-button bg-surface-glass text-text-secondary font-h3 active:scale-95 transition-all ease-apple border border-border-subtle">
+                  僅修改此單筆紀錄
+                </button>
+                <button onClick={() => setGroupEditPrompt(null)} className="w-full py-item mt-1 text-text-tertiary text-caption font-h3 active:opacity-50 transition-all ease-apple">
+                  取消儲存
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
@@ -630,11 +821,7 @@ function AdvancedSettingsModal({ config, onUpdate, totalAmount, onClose }: any) 
     const principal = config.totalAmount || totalAmount;
     const rate = config.interestRate / 100;
     const n = config.totalInstallments;
-
-    // Simple calculation logic for demonstration (principal * (1 + rate*n) / n)
-    // Real logic might benefit from actual interest calculation
     let monthly = (principal * (1 + rate)) / n;
-
     if (config.roundingMethod === 'ceil') return Math.ceil(monthly);
     if (config.roundingMethod === 'floor') return Math.floor(monthly);
     return Math.round(monthly);
@@ -655,179 +842,191 @@ function AdvancedSettingsModal({ config, onUpdate, totalAmount, onClose }: any) 
       </header>
 
       <div className="flex-1 px-screen py-section flex flex-col gap-section pb-nav-clearance">
-        <div className="flex items-center justify-between p-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-caption font-caption text-text-secondary uppercase tracking-widest">啟用自動化/分期</span>
-            <span className="text-caption text-text-tertiary">開啟後將依照設定自動記錄或分期</span>
+        
+        {/* Toggle Switch Card */}
+        <div className="flex items-center justify-between p-item rounded-card bg-surface-primary border border-hairline border-border-subtle shadow-sm">
+          <div className="flex flex-col gap-1">
+            <span className="text-body font-h3 text-text-primary">啟用自動化與分期</span>
+            <span className="text-caption text-text-tertiary">設定定期紀錄或分期付款排程</span>
           </div>
-          <div
+          <button
             onClick={() => onUpdate({ ...config, enabled: !config.enabled })}
-            className={`rounded-button transition-all ease-apple relative cursor-pointer ${config.enabled ? 'bg-brand-primary' : 'bg-surface-glass'}`}
-            style={{ width: "56px", height: "28px" }}
+            className={`relative shrink-0 rounded-full transition-colors duration-300 ease-in-out ${config.enabled ? 'bg-brand-primary' : 'bg-surface-glass-heavy'}`}
+            style={{ width: "52px", height: "32px" }}
           >
-            <div className={`absolute top-1 rounded-button bg-text-primary transition-all ${config.enabled ? 'left-8' : 'left-1'}`} style={{ width: "20px", height: "20px" }} />
-          </div>
+            <div className={`absolute top-1/2 -translate-y-1/2 bg-bg-base rounded-full shadow-sm transition-all duration-300 ease-out ${config.enabled ? 'left-[22px]' : 'left-1'}`} style={{ width: "24px", height: "24px" }} />
+          </button>
         </div>
 
         {config.enabled && (
-          <div className="flex flex-col gap-section">
-            <div className="bg-surface-primary rounded-card border border-hairline border-border-subtle overflow-hidden divide-y-hairline divide-white/5">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-section">
+
+            {/* Segmented Control */}
+            <div className="flex bg-surface-glass p-1 rounded-button border border-hairline border-border-subtle shrink-0">
               <button
                 onClick={() => onUpdate({ ...config, type: 'recurring' })}
-                className={`flex-1 py-item rounded-input text-caption font-caption uppercase tracking-wide transition-all ease-apple ${config.type === 'recurring' ? 'bg-text-primary text-bg-base' : 'text-text-secondary'}`}
+                className={`flex-1 py-2 rounded-inner text-caption font-h3 tracking-wide transition-all ease-apple ${config.type === 'recurring' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-primary'}`}
               >
-                定期性/循環
+                定期紀錄
               </button>
               <button
                 onClick={() => onUpdate({ ...config, type: 'installment' })}
-                className={`flex-1 py-item rounded-input text-caption font-caption uppercase tracking-wide transition-all ease-apple ${config.type === 'installment' ? 'bg-text-primary text-bg-base' : 'text-text-secondary'}`}
+                className={`flex-1 py-2 rounded-inner text-caption font-h3 tracking-wide transition-all ease-apple ${config.type === 'installment' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-primary'}`}
               >
-                分期付款設定
+                分期付款
               </button>
             </div>
 
-            {config.type === 'recurring' ? (
-              <div className="flex flex-col gap-item">
-                <div className="grid grid-cols-2 gap-inner">
-                  <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                    <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">循環週期</span>
-                    <div className="flex items-center gap-inner">
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={config.interval === 0 ? "" : config.interval}
-                        onChange={(e) => onUpdate({ ...config, interval: e.target.value === "" ? 0 : Number(e.target.value) })}
-                        className="bg-bg-base/50 text-center py-micro rounded-card text-brand-primary font-body outline-none border border-surface-glass-heavy"
-                        style={{ width: "48px" }}
-                        min="1"
-                      />
-                      <select
-                        value={config.frequency}
-                        onChange={(e) => onUpdate({ ...config, frequency: e.target.value })}
-                        className="bg-transparent text-body font-body text-text-primary outline-none flex-1 leading-normal"
-                      >
-                        <option value="day">天</option>
-                        <option value="week">週</option>
-                        <option value="month">月</option>
-                        <option value="year">年</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                    <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">特定扣款日</span>
+            {/* Recurring Options */}
+            {config.type === 'recurring' && (
+              <div className="flex flex-col rounded-card bg-surface-primary border border-hairline border-border-subtle overflow-hidden shadow-sm divide-y divide-hairline divide-border-subtle">
+                <div className="flex items-center justify-between p-item">
+                  <span className="text-body text-text-primary">循環週期</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-text-tertiary text-body">每</span>
                     <input
                       type="number"
                       inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={config.dayOfCycle === 0 ? "" : config.dayOfCycle}
-                      onChange={(e) => onUpdate({ ...config, dayOfCycle: e.target.value === "" ? 0 : Number(e.target.value) })}
-                      className="bg-bg-base/50 w-full text-left px-inner py-micro rounded-card text-text-primary text-body font-body outline-none border border-surface-glass-heavy leading-normal"
-                      placeholder="如:15"
+                      value={config.interval === 0 ? "" : config.interval}
+                      onChange={(e) => onUpdate({ ...config, interval: e.target.value === "" ? 0 : Number(e.target.value) })}
+                      className="w-12 bg-surface-glass text-center py-1 rounded-inner text-brand-primary font-h3 outline-none tabular-nums"
                     />
-                  </div>
-                </div>
-                <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                  <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">重複次數 (0表無限)</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={config.occurrenceCount === 0 ? "" : config.occurrenceCount}
-                    onChange={(e) => onUpdate({ ...config, occurrenceCount: e.target.value === "" ? 0 : Number(e.target.value) })}
-                    className="bg-bg-base/50 w-full text-left px-inner py-micro rounded-card text-text-primary text-body font-body outline-none border border-surface-glass-heavy leading-normal"
-                    placeholder="如: 60 (5年*12月)"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-item">
-                <div className="grid grid-cols-2 gap-inner">
-                  <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                    <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">分期總金額</span>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      pattern="[0-9]*"
-                      value={(config.totalAmount || totalAmount) === 0 ? "" : (config.totalAmount || totalAmount)}
-                      onChange={(e) => onUpdate({ ...config, totalAmount: e.target.value === "" ? 0 : Number(e.target.value) })}
-                      className="bg-bg-base/50 w-full px-inner py-micro rounded-card text-brand-primary text-body font-body outline-none border border-surface-glass-heavy leading-normal"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                    <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">總期數</span>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={config.totalInstallments === 0 ? "" : config.totalInstallments}
-                      onChange={(e) => onUpdate({ ...config, totalInstallments: e.target.value === "" ? 0 : Number(e.target.value) })}
-                      className="bg-bg-base/50 w-full px-inner py-micro rounded-card text-text-primary text-body font-body outline-none border border-surface-glass-heavy leading-normal"
-                      min="2"
-                    />
+                    <select
+                      value={config.frequency}
+                      onChange={(e) => onUpdate({ ...config, frequency: e.target.value })}
+                      className="bg-transparent text-body font-h3 text-brand-primary outline-none text-right"
+                    >
+                      <option value="day">天</option>
+                      <option value="week">週</option>
+                      <option value="month">個月</option>
+                      <option value="year">年</option>
+                    </select>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-inner">
-                  <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                    <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">年利率 (%)</span>
+                <div className="flex items-center justify-between p-item">
+                  <span className="text-body text-text-primary">特定扣款日</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={config.dayOfCycle === 0 ? "" : config.dayOfCycle}
+                    onChange={(e) => onUpdate({ ...config, dayOfCycle: e.target.value === "" ? 0 : Number(e.target.value) })}
+                    className="w-24 text-right bg-transparent text-brand-primary font-h3 outline-none placeholder:text-text-tertiary/50 tabular-nums"
+                    placeholder="例如: 15"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-item">
+                  <span className="text-body text-text-primary">重複次數</span>
+                  <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      inputMode="decimal"
-                      pattern="[0-9]*"
-                      value={config.interestRate === 0 ? "" : config.interestRate}
-                      onChange={(e) => onUpdate({ ...config, interestRate: e.target.value === "" ? 0 : Number(e.target.value) })}
-                      className="bg-bg-base/50 w-full px-inner py-micro rounded-card text-text-primary text-body font-body outline-none border border-surface-glass-heavy leading-normal"
-                      step="0.1"
+                      inputMode="numeric"
+                      value={config.occurrenceCount === 0 ? "" : config.occurrenceCount}
+                      onChange={(e) => onUpdate({ ...config, occurrenceCount: e.target.value === "" ? 0 : Number(e.target.value) })}
+                      className="w-24 text-right bg-transparent text-brand-primary font-h3 outline-none placeholder:text-text-tertiary/50 tabular-nums"
+                      placeholder="0 表無限"
                     />
+                    <span className="text-text-tertiary text-body">次</span>
                   </div>
-                  <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                    <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">計算方式</span>
+                </div>
+              </div>
+            )}
+
+            {/* Installment Options */}
+            {config.type === 'installment' && (
+              <div className="flex flex-col gap-section">
+                <div className="flex flex-col rounded-card bg-surface-primary border border-hairline border-border-subtle overflow-hidden shadow-sm divide-y divide-hairline divide-border-subtle">
+                  <div className="flex items-center justify-between p-item">
+                    <span className="text-body text-text-primary">分期總金額</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-text-tertiary text-body">$</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        value={(config.totalAmount || totalAmount) === 0 ? "" : (config.totalAmount || totalAmount)}
+                        onChange={(e) => onUpdate({ ...config, totalAmount: e.target.value === "" ? 0 : Number(e.target.value) })}
+                        className="w-28 text-right bg-transparent text-brand-primary font-h3 outline-none tabular-nums"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-item">
+                    <span className="text-body text-text-primary">總期數</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={config.totalInstallments === 0 ? "" : config.totalInstallments}
+                        onChange={(e) => onUpdate({ ...config, totalInstallments: e.target.value === "" ? 0 : Number(e.target.value) })}
+                        className="w-16 text-right bg-transparent text-brand-primary font-h3 outline-none tabular-nums"
+                        placeholder="如: 12"
+                      />
+                      <span className="text-text-tertiary text-body">期</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-item">
+                    <span className="text-body text-text-primary">年利率</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        value={config.interestRate === 0 ? "" : config.interestRate}
+                        onChange={(e) => onUpdate({ ...config, interestRate: e.target.value === "" ? 0 : Number(e.target.value) })}
+                        className="w-16 text-right bg-transparent text-brand-primary font-h3 outline-none tabular-nums"
+                        placeholder="0.0"
+                      />
+                      <span className="text-text-tertiary text-body">%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-item">
+                    <span className="text-body text-text-primary">計算方式</span>
                     <select
                       value={config.roundingMethod}
                       onChange={(e) => onUpdate({ ...config, roundingMethod: e.target.value })}
-                      className="bg-transparent text-body font-body text-text-primary outline-none w-full leading-normal"
+                      className="bg-transparent text-text-secondary font-body outline-none text-right"
                     >
                       <option value="round">四捨五入</option>
                       <option value="ceil">無條件進位</option>
                       <option value="floor">無條件捨去</option>
                     </select>
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-0.5 px-section py-item rounded-card bg-surface-primary border border-surface-glass-heavy">
-                  <span className="text-caption font-caption text-text-secondary uppercase tracking-[0.2em]">餘額納入期數</span>
-                  <div className="flex gap-item mt-0.5">
-                    <button
-                      onClick={() => onUpdate({ ...config, remainderStrategy: 'first' })}
-                      className={`text-caption font-body px-item py-1.5 rounded-button border transition-all ease-apple ${config.remainderStrategy === 'first' ? 'bg-text-primary text-bg-base border-text-primary' : 'bg-surface-glass text-text-secondary border-surface-glass-heavy'}`}
-                    >
-                      首期
-                    </button>
-                    <button
-                      onClick={() => onUpdate({ ...config, remainderStrategy: 'last' })}
-                      className={`text-caption font-body px-item py-1.5 rounded-button border transition-all ease-apple ${config.remainderStrategy === 'last' ? 'bg-text-primary text-bg-base border-text-primary' : 'bg-surface-glass text-text-secondary border-surface-glass-heavy'}`}
-                    >
-                      末期
-                    </button>
+                  <div className="flex items-center justify-between p-item">
+                    <span className="text-body text-text-primary">除不盡餘額</span>
+                    <div className="flex bg-surface-glass p-0.5 rounded-inner border border-hairline border-border-subtle">
+                       <button
+                         onClick={() => onUpdate({ ...config, remainderStrategy: 'first' })}
+                         className={`px-3 py-1 rounded-[4px] text-caption font-body transition-all ${config.remainderStrategy === 'first' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'}`}
+                       >納入首期</button>
+                       <button
+                         onClick={() => onUpdate({ ...config, remainderStrategy: 'last' })}
+                         className={`px-3 py-1 rounded-[4px] text-caption font-body transition-all ${config.remainderStrategy === 'last' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'}`}
+                       >納入末期</button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-item p-item rounded-card bg-brand-primary/10 border border-brand-primary/20 flex justify-between items-center">
-                  <span className="text-caption font-caption text-brand-primary uppercase">預估每期金額</span>
-                  <span className="text-h2 font-h2 text-brand-primary">${installmentAmount.toLocaleString()}</span>
+                {/* Preview Box */}
+                <div className="p-item rounded-card bg-brand-primary/10 border border-brand-primary/20 flex justify-between items-center shadow-sm">
+                  <span className="text-caption font-h3 text-brand-primary uppercase">預估每期金額</span>
+                  <span className="text-h2 font-h2 text-brand-primary tabular-nums">${installmentAmount.toLocaleString()}</span>
                 </div>
               </div>
             )}
-
-            <button
-              onClick={onClose}
-              className="mt-item w-full py-item rounded-button bg-brand-primary text-bg-base font-h3 uppercase tracking-wide active:scale-95 active:opacity-active transition-all duration-fast ease-apple"
-            >
-              完成設定
-            </button>
-          </div>
+          </motion.div>
         )}
+        
+        <div className="mt-auto pt-section">
+          <button
+            onClick={onClose}
+            className="w-full py-item rounded-button bg-brand-primary text-bg-base font-h3 tracking-wide active:scale-95 transition-all duration-fast ease-apple shadow-dropdown"
+          >
+            完成設定
+          </button>
+        </div>
       </div>
     </motion.div>
   );
