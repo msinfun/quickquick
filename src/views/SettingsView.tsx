@@ -1,13 +1,15 @@
 import { useRef, useState, useEffect } from "react";
-import { Bell, Palette, Shield, HelpCircle, LogOut, Tag, Download, Upload, AlertTriangle, Check, ChevronRight, Loader2, Sparkles, Key, Save, X } from "lucide-react";
+import { Bell, Palette, Shield, HelpCircle, LogOut, Tag, Download, Upload, AlertTriangle, Check, ChevronRight, Loader2, Sparkles, Key, Save, X, Repeat } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db/db";
 import { AnimatePresence, motion } from "framer-motion";
 import CategoryManagementView from "./CategoryManagementView";
+import RecurringManagementView from "./RecurringManagementView";
 import { exportDatabaseToJSON, importDatabaseFromJSON, clearAllData } from "@/db/db";
 
 export default function SettingsView() {
   const [showCategories, setShowCategories] = useState(false);
+  const [showRecurring, setShowRecurring] = useState(false);
   const [showBackupConfirm, setShowBackupConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -135,6 +137,11 @@ export default function SettingsView() {
           value: "已設定", 
           isToggle: false,
           onClick: () => setShowCategories(true) 
+        },
+        { 
+          icon: <Repeat className="size-icon-md inline-block mr-1" />, 
+          label: "分期與定期管理", 
+          onClick: () => setShowRecurring(true) 
         },
       ]
     },
@@ -286,6 +293,9 @@ export default function SettingsView() {
       <AnimatePresence>
         {showCategories && (
           <CategoryManagementView onBack={() => setShowCategories(false)} />
+        )}
+        {showRecurring && (
+          <RecurringManagementView onBack={() => setShowRecurring(false)} />
         )}
       </AnimatePresence>
 

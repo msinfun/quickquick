@@ -29,7 +29,7 @@ export function useRecurringProcessor() {
               date: currentDate,
               group_id: groupId,
               rule_id: rule.id,
-              status: "confirmed"
+              status: "pending"
             } as any);
           }
 

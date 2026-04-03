@@ -110,7 +110,7 @@ export default function AccountView() {
                     <span className="font-h3 text-body leading-normal text-text-primary">{acc.name}</span>
                   </div>
                 </div>
-                <span className={`font-h2 text-h3 tabular-nums tracking-tight ${acc.current_balance < 0 ? 'text-text-primary' : 'text-brand-primary'}`}>
+                <span className={`font-h2 text-h3 tabular-nums tracking-tight ${acc.current_balance < 0 ? 'text-semantic-danger' : 'text-brand-primary'}`}>
                   {acc.current_balance < 0 ? '-' : ''}${Math.abs(acc.current_balance).toLocaleString()}
                 </span>
               </button>
