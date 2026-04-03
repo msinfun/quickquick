@@ -6,6 +6,7 @@ import { db, addTransaction } from "@/db/db";
 import TransactionFormView from "./TransactionFormView";
 import { ICON_MAP } from "@/constants/icons";
 import { Tag, Box } from "lucide-react";
+import ConfirmModal from "@/components/ConfirmModal";
 
 interface Transaction {
   id?: number;
@@ -43,6 +44,8 @@ export default function PendingView() {
   };
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [isDeletingRecurring, setIsDeletingRecurring] = useState(false);
 
   const handleConfirm = async (id: number) => {
     const tx = await db.transactions.get(id);
@@ -66,7 +69,22 @@ export default function PendingView() {
   };
 
   const handleDelete = async (id: number) => {
+    const tx = await db.transactions.get(id);
+    if (tx?.rule_id) {
+      setDeleteId(id);
+      setIsDeletingRecurring(true);
+      return;
+    }
+    
+    // 一般交易：直接刪除
     await db.transactions.delete(id);
+  };
+
+  const executeDelete = async () => {
+    if (deleteId) {
+      await db.transactions.delete(deleteId);
+      setDeleteId(null);
+    }
   };
 
   const handleSaveVerified = async () => {
@@ -146,6 +164,19 @@ export default function PendingView() {
           />
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={deleteId !== null}
+        title="發起刪除"
+        message={isDeletingRecurring 
+          ? "此筆交易屬於分期/定期項目。刪除此明細「不會」停止未來期數的自動產生，如需取消排程請至管理頁面。" 
+          : "確定要刪除此筆待審核交易嗎？"}
+        confirmText="刪除"
+        cancelText="取消"
+        isDestructive={true}
+        onConfirm={executeDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }

@@ -20,6 +20,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [isExpanded, setIsExpanded] = useState(true);
   const [deleteId, setDeleteId] = useState<number | string | null>(null);
+  const [isDeletingRecurring, setIsDeletingRecurring] = useState(false);
 
   // --- Swiped Item ID for Mutual Exclusion ---
   const [swipedItemId, setSwipedItemId] = useState<number | null>(null);
@@ -110,8 +111,32 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
   };
 
   const handleDelete = async (idOrGroupId: number | string) => {
+    if (typeof idOrGroupId === 'number') {
+      const tx = await db.transactions.get(idOrGroupId);
+      if (tx?.rule_id) {
+        setDeleteId(idOrGroupId);
+        setIsDeletingRecurring(true);
+        return;
+      }
+    } else {
+      const txs = await db.transactions.where('group_id').equals(idOrGroupId).toArray();
+      if (txs.some(t => t.rule_id)) {
+        setDeleteId(idOrGroupId);
+        setIsDeletingRecurring(true);
+        return;
+      }
+    }
+    
+    // 一般交易：直接刪除，不進入 ConfirmModal
     await deleteTransaction(idOrGroupId);
-    setDeleteId(null);
+  };
+
+  const executeDelete = async () => {
+    if (deleteId) {
+      await deleteTransaction(deleteId);
+      setDeleteId(null);
+      setIsDeletingRecurring(false);
+    }
   };
 
   const getIcon = (mainCat: string, subCat?: string) => {
@@ -364,6 +389,18 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
         )}
       </AnimatePresence>
 
+      <ConfirmModal
+        isOpen={deleteId !== null}
+        title="發起刪除"
+        message={isDeletingRecurring 
+          ? "此筆交易屬於分期/定期項目。刪除此明細「不會」停止未來期數的自動產生，如需取消排程請至管理頁面。" 
+          : "確定要刪除此筆交易嗎？此操作無法還原。"}
+        confirmText="刪除"
+        cancelText="取消"
+        isDestructive={true}
+        onConfirm={executeDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }

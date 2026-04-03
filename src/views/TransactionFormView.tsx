@@ -74,7 +74,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
   });
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [groupEditPrompt, setGroupEditPrompt] = useState<{isOpen: boolean, relatedCount: number} | null>(null);
+  const [groupEditPrompt, setGroupEditPrompt] = useState<{isOpen: boolean, relatedCount: number, hasRule?: boolean} | null>(null);
   const [loadingCategoryIdx, setLoadingCategoryIdx] = useState<number | null>(null);
 
   const isExistingInstallment = useMemo(() => {
@@ -138,29 +138,37 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
       return;
     }
 
-    // 檢查是否為「單筆編輯」且「屬於某個群組/分期」
-    const firstItem = remainingItems[0];
-    if (remainingItems.length === 1 && firstItem.group_id && firstItem.id) {
-      const relatedCount = await db.transactions.where('group_id').equals(firstItem.group_id).count();
-      if (relatedCount > 1) {
-        setGroupEditPrompt({ isOpen: true, relatedCount });
+    const firstInitial = Array.isArray(initialData) ? initialData[0] : initialData;
+    const hasRule = !!(firstInitial?.rule_id || remainingItems.some(it => it.rule_id));
+    const groupId = remainingItems[0]?.group_id || (firstInitial as any)?.group_id;
+    const hasGroupId = !!groupId;
+    const isEditMode = !!(firstInitial?.id || remainingItems.some(it => it.id));
+
+    if (isEditMode && !groupEditPrompt) {
+      const relatedGroupCount = hasGroupId ? await db.transactions.where('group_id').equals(groupId).count() : 0;
+      
+      if (hasRule || relatedGroupCount > 1) {
+        setGroupEditPrompt({ 
+          isOpen: true, 
+          relatedCount: relatedGroupCount,
+          hasRule: hasRule
+        });
         return; // 暫停儲存，等待使用者選擇
       }
     }
     
-    await executeSave(false);
+    await executeSave(false, false);
   };
 
-  const executeSave = async (applyToAll: boolean) => {
+  const executeSave = async (applyToAll: boolean, applyToRule: boolean) => {
     setIsSaving(true);
     setGroupEditPrompt(null);
     try {
       const remainingItems = items.filter(item => item.amount !== 0 || item.item_name);
 
-      // Determine group_id: 
-      // - If multiple items remain, use existing or new UUID
-      // - If only one item remains, retain its group_id instead of clearing it
+      // Determine group_id/rule_id
       const groupId = remainingItems.length > 1 ? (remainingItems[0].group_id || generateId()) : remainingItems[0]?.group_id;
+      const ruleId = remainingItems[0]?.rule_id;
 
       await db.transaction('rw', [db.transactions, db.accounts, db.recurringRules], async () => {
         // 1. Physically delete items removed in UI
@@ -170,13 +178,50 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
           }
         }
 
-        // 【新增】群組連動修改邏輯 (必須在處理當前 item 前執行，確保舊帳戶餘額正確回退)
+        // 【新增】規則連動修改邏輯 (更新 RecurringRule 範本與其餘 Pending 交易)
+        if (applyToRule && ruleId) {
+          const rule = await db.recurringRules.get(ruleId);
+          if (rule) {
+            const newTemplate = {
+              ...rule.template_transaction,
+              ...sharedInfo,
+              items: remainingItems.map(({id, tempId, ...rest}: any) => rest)
+            };
+            
+            if (remainingItems.length === 1) {
+              const sign = remainingItems[0].type === 'expense' ? -1 : 1;
+              newTemplate.amount = Math.abs(remainingItems[0].amount) * sign;
+              newTemplate.main_category = remainingItems[0].main_category;
+              newTemplate.sub_category = remainingItems[0].sub_category;
+              newTemplate.item_name = remainingItems[0].item_name;
+            }
+
+            await db.recurringRules.update(ruleId, { template_transaction: newTemplate });
+
+            const pendingTxs = await db.transactions.where('rule_id').equals(ruleId).filter(t => t.status === 'pending').toArray();
+            for (const pTx of pendingTxs) {
+              if (pTx.id === remainingItems[0].id) continue;
+              
+              await db.transactions.update(pTx.id!, {
+                ...sharedInfo,
+                main_category: remainingItems[0].main_category,
+                sub_category: remainingItems[0].sub_category,
+                amount: remainingItems[0].amount,
+                item_name: remainingItems[0].item_name,
+                merchant: sharedInfo.merchant,
+                account_id: sharedInfo.account_id,
+                note: sharedInfo.note
+              });
+            }
+          }
+        }
+
+        // 2. 群組連動修改邏輯 (更新同個 groupId 的商家、帳戶與備註)
         if (applyToAll && groupId) {
           const relatedTxs = await db.transactions.where('group_id').equals(groupId).toArray();
           for (const rTx of relatedTxs) {
-            if (rTx.id === remainingItems[0].id) continue; // 當前編輯的這筆在下方處理
+            if (rTx.id === remainingItems[0].id) continue;
 
-            // 如果這筆分期狀態是已扣款，需回退舊帳戶餘額並扣除新帳戶餘額
             if (['confirmed', 'completed', 'reconciled'].includes(rTx.status || '')) {
               if (rTx.account_id) {
                 const oldAcc = await db.accounts.get(rTx.account_id);
@@ -188,7 +233,6 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
               }
             }
 
-            // 更新該期交易資料
             await db.transactions.update(rTx.id!, {
               account_id: sharedInfo.account_id,
               merchant: sharedInfo.merchant,
@@ -198,7 +242,8 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
           }
         }
 
-        if (advancedConfig.enabled && advancedConfig.type === 'installment') {
+        // 3. 處理「進階分期 re-gen」（僅當使用者明確在進階面板啟動且不是單純的規則同步時）
+        if (advancedConfig.enabled && advancedConfig.type === 'installment' && !applyToRule) {
           for (const item of remainingItems) {
             if (item.id) {
               const old = await db.transactions.get(item.id);
@@ -251,8 +296,8 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
             total_amount: total,
             total_installments: N,
             installments_paid: 1, // Phase 1 creates the first install!
-            start_date: todayStr,
-            next_generation_date: calculateNextDate(todayStr, (freqMap[advancedConfig.frequency] || 'monthly') as any, advancedConfig.interval),
+            start_date: sharedInfo.date,
+            next_generation_date: calculateNextDate(sharedInfo.date, (freqMap[advancedConfig.frequency] || 'monthly') as any, advancedConfig.interval),
             is_active: true
           });
 
@@ -269,7 +314,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
 
           const baseName = baseItem.item_name || baseItem.main_category;
           const periodName = `${baseName} (第 1/${N} 期)`;
-          const status = currentPeriodDateStr <= todayStr ? "confirmed" : "pending"; // First period can be pending if in future
+          const status = "confirmed"; // 手動建立的第一期固定為已確認狀態
 
           const finalTx = {
             ...baseItem,
@@ -675,13 +720,21 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
             >
               <h3 className="text-h2 font-h2 text-text-primary leading-tight">連動修改</h3>
               <p className="text-text-tertiary text-body leading-relaxed">
-                這是一筆分期或關聯交易。請問是否要將您修改的<br/><strong className="text-text-primary">帳戶、商家與備註</strong><br/>套用至全部 {groupEditPrompt.relatedCount} 筆關聯紀錄？
+                {groupEditPrompt.hasRule 
+                  ? "這是一筆具備「分期或循環規則」的交易。請問要連動修改未來的規則與尚未確認的期數嗎？"
+                  : `這是一個具有 ${groupEditPrompt.relatedCount} 個項目的群組交易。請問是否要將修改套用至全部紀錄？`}
               </p>
               <div className="flex flex-col gap-inner w-full mt-2">
-                <button onClick={() => executeSave(true)} className="w-full py-item rounded-button bg-brand-primary text-bg-base font-h3 active:scale-95 transition-all ease-apple">
-                  套用至全部 {groupEditPrompt.relatedCount} 筆
+                <button 
+                  onClick={() => executeSave(true, !!groupEditPrompt.hasRule)} 
+                  className="w-full py-item rounded-button bg-brand-primary text-bg-base font-h3 active:scale-95 transition-all ease-apple"
+                >
+                  {groupEditPrompt.hasRule ? "修改此筆與未來全部" : `套用至全部 ${groupEditPrompt.relatedCount} 筆`}
                 </button>
-                <button onClick={() => executeSave(false)} className="w-full py-item rounded-button bg-surface-glass text-text-secondary font-h3 active:scale-95 transition-all ease-apple border border-border-subtle">
+                <button 
+                  onClick={() => executeSave(false, false)} 
+                  className="w-full py-item rounded-button bg-surface-glass text-text-secondary font-h3 active:scale-95 transition-all ease-apple border border-border-subtle"
+                >
                   僅修改此單筆紀錄
                 </button>
                 <button onClick={() => setGroupEditPrompt(null)} className="w-full py-item mt-1 text-text-tertiary text-caption font-h3 active:opacity-50 transition-all ease-apple">

@@ -238,6 +238,7 @@ export const deleteTransaction = async (idOrGroupId: number | string) => {
           }
         }
       }
+
       // Bulk delete the group
       const ids = txs.map(t => t.id).filter((id): id is number => id !== undefined);
       await db.transactions.bulkDelete(ids);
@@ -248,6 +249,7 @@ export const deleteTransaction = async (idOrGroupId: number | string) => {
     
     return await db.transaction('rw', db.transactions, db.accounts, async () => {
       await db.transactions.delete(idOrGroupId);
+
       // Revert account balance only if it was actually applied to an account
       if (tx.status !== 'pending' && tx.account_id !== undefined) {
         const account = await db.accounts.get(tx.account_id);
@@ -335,6 +337,7 @@ export const exportDatabaseToJSON = async () => {
   const accounts = await db.accounts.toArray();
   const transactions = await db.transactions.toArray();
   const settings = await db.settings.toArray();
+  const recurringRules = await db.recurringRules.toArray();
 
   const backupData = {
     app_version: "1.0.0",
@@ -342,7 +345,8 @@ export const exportDatabaseToJSON = async () => {
     data: {
       accounts,
       transactions,
-      settings
+      settings,
+      recurringRules
     }
   };
 
@@ -368,11 +372,12 @@ export const importDatabaseFromJSON = async (file: File) => {
       throw new Error("無效的備份檔案規格或遺失核心數據");
     }
 
-  return await db.transaction('rw', db.accounts, db.transactions, db.settings, async () => {
+  return await db.transaction('rw', db.accounts, db.transactions, db.settings, db.recurringRules, async () => {
     // Clear existing data
     await db.accounts.clear();
     await db.transactions.clear();
     await db.settings.clear();
+    await db.recurringRules.clear();
 
     // Import and merge with default models
     const mergedAccounts = backup.data.accounts.map((acc: any) => ({
@@ -386,11 +391,15 @@ export const importDatabaseFromJSON = async (file: File) => {
     }));
 
     const settings = backup.data.settings || [];
+    const recurringRules = backup.data.recurringRules || [];
 
     await db.accounts.bulkAdd(mergedAccounts);
     await db.transactions.bulkAdd(mergedTransactions);
     if (settings.length > 0) {
       await db.settings.bulkAdd(settings);
+    }
+    if (recurringRules.length > 0) {
+      await db.recurringRules.bulkAdd(recurringRules);
     }
   });
   } catch (err) {

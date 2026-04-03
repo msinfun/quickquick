@@ -317,9 +317,9 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
             const placeholders = ["未指定項目", "未辨識品項", "未命名項目", "未指定"];
             if (placeholders.some(p => finalItemName.includes(p))) return "pending"; // 缺失必要資訊：名稱
             
-            if (res.confidence_score !== undefined && res.confidence_score < 0.9) return "pending"; // AI 信心度不足
+            if (res.confidence_score !== undefined && res.confidence_score < 0.7) return "pending"; // AI 信心度不足
             
-            return "completed"; // 資訊齊全，免審核直接入帳
+            return "confirmed"; // 資訊齊全，免審核直接入帳
           };
 
           const status = determineStatus();
@@ -343,8 +343,8 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
             invoice_number: res.invoice_number || ""
           });
 
-          // 如果狀態為 completed，同步更新帳戶餘額 (收入為加，支出為扣)
-          if (status === "completed" && finalAccountId !== -1) {
+          // 如果狀態為 confirmed，同步更新帳戶餘額 (收入為加，支出為扣)
+          if (status === "confirmed" && finalAccountId !== -1) {
             const account = await db.accounts.get(finalAccountId);
             if (account) {
               await db.accounts.update(finalAccountId, {
