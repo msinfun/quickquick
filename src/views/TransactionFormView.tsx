@@ -501,7 +501,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
                         setItems(prev => prev.filter((_, i) => i !== idx));
                       }}
                       isOpen={swipedId === itemKey}
-                      onOpenStateChange={(open) => setSwipedId(open ? itemKey : null)}
+                      onOpenStateChange={(open: boolean) => setSwipedId(open ? itemKey : null)}
                     >
                       <div className="w-full p-item flex flex-col gap-inner bg-surface-primary active:bg-surface-glass-heavy transition-all duration-normal ease-apple border-b border-hairline border-border-subtle">
                         <div className="flex items-center gap-item">

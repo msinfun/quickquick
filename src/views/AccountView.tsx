@@ -126,7 +126,7 @@ export default function AccountView() {
             onBack={() => setSelectedAccount(null)} 
             onEditAccount={() => openEditModal(selectedAccount)}
             onDeleteAccount={() => handleDeleteAccount(selectedAccount.id as number)}
-            onStartReconciliation={(txs) => setReconcilingTransactions(txs)}
+            onStartReconciliation={(txs) => setReconcilingTransactions(txs as any)}
           />
         )}
       </AnimatePresence>
@@ -135,7 +135,6 @@ export default function AccountView() {
         {reconcilingTransactions !== null && (
           <ReconciliationView 
             account={selectedAccount}
-            transactions={reconcilingTransactions}
             onBack={() => setReconcilingTransactions(null)}
           />
         )}
