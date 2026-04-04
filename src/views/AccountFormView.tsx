@@ -1,14 +1,20 @@
 import { useState, useEffect } from "react";
-import { ChevronLeft, Wallet, DollarSign, Calendar, Tag } from "lucide-react";
+import { ChevronLeft, Calendar, Tag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ICON_MAP, ICON_GROUPS } from "@/constants/icons";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/db/db";
 
 interface Account {
   id?: number;
   name: string;
+  type: "cash" | "bank" | "credit_card";
   initial_balance?: number;
   current_balance: number;
   billing_cycle?: number;
+  payment_due_day?: number;
+  auto_pay_enabled?: boolean;
+  auto_pay_from_account_id?: number;
   icon?: string;
 }
 
@@ -19,9 +25,14 @@ interface AccountFormViewProps {
 }
 
 export default function AccountFormView({ initialData, onSave, onBack }: AccountFormViewProps) {
+  const accounts = useLiveQuery(() => db.accounts.toArray()) || [];
   const [name, setName] = useState("");
-  const [initialBalance, setInitialBalance] = useState("");
+  const [type, setType] = useState<"cash" | "bank" | "credit_card">("bank");
+  const [initialBalance, setInitialBalance] = useState("0");
   const [billingCycle, setBillingCycle] = useState("1");
+  const [paymentDueDay, setPaymentDueDay] = useState("15");
+  const [autoPayEnabled, setAutoPayEnabled] = useState(false);
+  const [autoPayFromAccountId, setAutoPayFromAccountId] = useState<string>("");
   const [iconName, setIconName] = useState("CreditCard");
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [activeIconGroup, setActiveIconGroup] = useState(ICON_GROUPS[0].group);
@@ -30,13 +41,21 @@ export default function AccountFormView({ initialData, onSave, onBack }: Account
   useEffect(() => {
     if (initialData) {
       setName(initialData.name || "");
-      setInitialBalance(initialData.initial_balance ? initialData.initial_balance.toString() : "");
-      setBillingCycle(initialData.billing_cycle ? initialData.billing_cycle.toString() : "");
+      setType(initialData.type || "bank");
+      setInitialBalance(initialData.initial_balance ? initialData.initial_balance.toString() : "0");
+      setBillingCycle(initialData.billing_cycle ? initialData.billing_cycle.toString() : "1");
+      setPaymentDueDay(initialData.payment_due_day ? initialData.payment_due_day.toString() : "15");
+      setAutoPayEnabled(initialData.auto_pay_enabled || false);
+      setAutoPayFromAccountId(initialData.auto_pay_from_account_id ? initialData.auto_pay_from_account_id.toString() : "");
       setIconName(initialData.icon || "CreditCard");
     } else {
       setName("");
-      setInitialBalance("");
-      setBillingCycle("");
+      setType("bank");
+      setInitialBalance("0");
+      setBillingCycle("1");
+      setPaymentDueDay("15");
+      setAutoPayEnabled(false);
+      setAutoPayFromAccountId("");
       setIconName("CreditCard");
     }
   }, [initialData]);
@@ -50,9 +69,13 @@ export default function AccountFormView({ initialData, onSave, onBack }: Account
     
     const accountData: any = {
       name,
+      type,
       initial_balance: parsedInitial,
       current_balance: initialData ? initialData.current_balance : parsedInitial,
       billing_cycle: parseInt(billingCycle, 10) || 1,
+      payment_due_day: parseInt(paymentDueDay, 10) || 15,
+      auto_pay_enabled: autoPayEnabled,
+      auto_pay_from_account_id: autoPayFromAccountId ? parseInt(autoPayFromAccountId, 10) : undefined,
       icon: iconName
     };
 
@@ -118,46 +141,144 @@ export default function AccountFormView({ initialData, onSave, onBack }: Account
 
           <div className="flex flex-col gap-item">
             <label className="text-caption font-caption text-text-tertiary px-inner-label uppercase tracking-wide">
+              帳戶種類
+            </label>
+            <div className="flex bg-surface-glass p-1 rounded-button border border-hairline border-border-subtle relative h-12">
+              <div className="absolute inset-1 flex w-[calc(100%-8px)] h-[calc(100%-8px)] pointer-events-none">
+                <motion.div
+                  className="bg-brand-primary h-full rounded-button shadow-lg shadow-brand-primary/20 border border-hairline border-bg-base/20"
+                  initial={false}
+                  animate={{
+                    x: type === "bank" ? "0%" : type === "cash" ? "100%" : "200%",
+                    width: "33.333%"
+                  }}
+                  transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                />
+              </div>
+              {(["bank", "cash", "credit_card"] as const).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setType(t)}
+                  className={`flex-1 relative z-10 rounded-button text-body font-h3 transition-colors duration-normal ease-apple ${
+                    type === t ? "text-bg-base" : "text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  {t === "bank" ? "銀行" : t === "cash" ? "現金" : "信用卡"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-item">
+            <label className="text-caption font-caption text-text-tertiary px-inner-label uppercase tracking-wide">
               初始設定金額
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-item flex items-center pointer-events-none">
-                <DollarSign className="size-icon-md text-text-tertiary" />
+                <span className="text-text-tertiary font-body">$</span>
               </div>
               <input
                 type="number"
-                inputMode="decimal"
+                inputMode="numeric"
                 pattern="[0-9]*"
                 value={initialBalance}
                 onChange={(e) => setInitialBalance(e.target.value)}
-                placeholder="0.00"
+                placeholder="0"
                 className="w-full bg-bg-base border border-hairline border-border-subtle rounded-input py-item pl-input-pl pr-item text-body font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-brand-primary/50 transition-all duration-normal ease-apple tabular-nums"
                 required
               />
             </div>
           </div>
 
-          <div className="flex flex-col gap-item">
-            <label className="text-caption font-caption text-text-tertiary px-inner-label uppercase tracking-wide">
-              帳單週期日
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-item flex items-center pointer-events-none">
-                <Calendar className="size-icon-md text-text-tertiary" />
+          <div className="flex bg-surface-primary rounded-card p-item border border-hairline border-border-subtle flex-col gap-section">
+            <div className="flex flex-col gap-item">
+              <label className="text-caption font-caption text-text-tertiary px-inner-label uppercase tracking-wide">
+                {type === 'credit_card' ? '結帳日 (每月)' : '帳單週期日'}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-item flex items-center pointer-events-none">
+                  <Calendar className="size-icon-md text-text-tertiary" />
+                </div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  min="1"
+                  max="31"
+                  value={billingCycle}
+                  onChange={(e) => setBillingCycle(e.target.value)}
+                  placeholder="1"
+                  className="w-full bg-bg-base border border-hairline border-border-subtle rounded-input py-item pl-input-pl pr-item text-body font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-brand-primary/50 transition-all duration-normal ease-apple tabular-nums"
+                />
               </div>
-              <input
-                type="number"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                min="1"
-                max="31"
-                value={billingCycle}
-                onChange={(e) => setBillingCycle(e.target.value)}
-                placeholder="1"
-                className="w-full bg-bg-base border border-hairline border-border-subtle rounded-input py-item pl-input-pl pr-item text-body font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-brand-primary/50 transition-all duration-normal ease-apple tabular-nums"
-                required
-              />
             </div>
+
+            {type === 'credit_card' && (
+              <>
+                <div className="flex flex-col gap-item animate-in slide-in-from-top-2 duration-normal">
+                  <label className="text-caption font-caption text-text-tertiary px-inner-label uppercase tracking-wide">
+                    付款日 (每月)
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-item flex items-center pointer-events-none">
+                      <Calendar className="size-icon-md text-text-tertiary" />
+                    </div>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      min="1"
+                      max="31"
+                      value={paymentDueDay}
+                      onChange={(e) => setPaymentDueDay(e.target.value)}
+                      placeholder="15"
+                      className="w-full bg-bg-base border border-hairline border-border-subtle rounded-input py-item pl-input-pl pr-item text-body font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-brand-primary/50 transition-all duration-normal ease-apple tabular-nums"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-item animate-in slide-in-from-top-2 duration-normal">
+                  <div className="flex items-center justify-between px-inner-label">
+                    <label className="text-caption font-caption text-text-tertiary uppercase tracking-wide">
+                      到期自動轉帳付款
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setAutoPayEnabled(!autoPayEnabled)}
+                      className={`w-12 h-6 rounded-button transition-all duration-normal ease-apple relative ${
+                        autoPayEnabled ? "bg-brand-primary" : "bg-surface-glass-heavy"
+                      }`}
+                    >
+                      <motion.div
+                        animate={{ x: autoPayEnabled ? 26 : 2 }}
+                        className="absolute inset-y-1 left-0 w-4 h-4 bg-bg-base rounded-button shadow-sm"
+                      />
+                    </button>
+                  </div>
+
+                  {autoPayEnabled && (
+                    <div className="flex flex-col gap-inner mt-inner animate-in fade-in duration-normal">
+                      <label className="text-caption font-body text-text-tertiary px-inner-label uppercase tracking-wide">
+                        從哪個帳戶扣款？
+                      </label>
+                      <select
+                        value={autoPayFromAccountId}
+                        onChange={(e) => setAutoPayFromAccountId(e.target.value)}
+                        className="w-full bg-bg-base border border-hairline border-border-subtle rounded-button p-item text-body text-text-primary outline-none focus:border-brand-primary/50"
+                      >
+                        <option value="">請選擇付款帳戶</option>
+                        {accounts
+                          .filter((acc: any) => acc.id !== initialData?.id && acc.type !== 'credit_card')
+                          .map((acc: any) => (
+                            <option key={acc.id} value={acc.id}>{acc.name}</option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="mt-section">

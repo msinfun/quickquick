@@ -58,6 +58,81 @@ export function useRecurringProcessor() {
           });
         }
       }
+
+      // --- Credit Card Auto-Pay Logic ---
+      const creditCardAccounts = await db.accounts
+        .where('type')
+        .equals('credit_card')
+        .filter(acc => !!acc.auto_pay_enabled && !!acc.auto_pay_from_account_id)
+        .toArray();
+
+      for (const card of creditCardAccounts) {
+        const [y, m, d] = today.split('/').map(Number);
+        
+        // Calculate payment date for THIS month
+        // In most cases, payment is due on payment_due_day of current month
+        // The billing cycle is billing_cycle.
+        const payDate = new Date(y, m - 1, card.payment_due_day || 15);
+        const payDateStr = payDate.toISOString().split('T')[0].replace(/-/g, '/');
+        
+        // Only trigger if today is payment day or after
+        if (today >= payDateStr) {
+          // Identify the billing month we are paying for. 
+          // Usually auto-pay pays off the balance from the PREVIOUS cycle.
+          // For simplicity, we check if we've already made an "Auto-Pay" transfer to this card this month.
+          const currentMonthPrefix = `${y}/${String(m).padStart(2, '0')}`;
+          
+          const existingPayment = await db.transactions
+            .where('account_id')
+            .equals(card.id!)
+            .filter(tx => 
+              tx.type === 'transfer' && 
+              tx.date.startsWith(currentMonthPrefix) &&
+              tx.note?.includes('自動轉帳付款') === true
+            )
+            .first();
+
+          if (!existingPayment) {
+            // Need to pay!
+            // Calculate current balance of the card (it's usually negative for credit cards)
+            // If balance is >= 0, no need to pay.
+            if (card.current_balance < 0) {
+              const amountToPay = Math.abs(card.current_balance);
+              const sourceAccountId = card.auto_pay_from_account_id!;
+
+              await db.transaction('rw', [db.transactions, db.accounts], async () => {
+                // 1. Transaction on source account (expense-like transfer)
+                await addTransaction({
+                  date: today,
+                  type: 'transfer',
+                  main_category: '轉帳',
+                  sub_category: '帳單付款',
+                  account_id: sourceAccountId,
+                  amount: -amountToPay,
+                  item_name: `信用卡自動扣款 (${card.name})`,
+                  status: 'confirmed',
+                  note: `自動轉帳付款至 ${card.name}`
+                });
+
+                // 2. Transaction on card account (income-like transfer)
+                await addTransaction({
+                  date: today,
+                  type: 'transfer',
+                  main_category: '轉帳',
+                  sub_category: '帳單付款',
+                  account_id: card.id,
+                  amount: amountToPay,
+                  item_name: `信用卡自動扣款 (${card.name})`,
+                  status: 'confirmed',
+                  note: `自動轉帳付款自其他帳戶`
+                });
+              });
+              
+              console.log(`Auto-paid ${amountToPay} for ${card.name}`);
+            }
+          }
+        }
+      }
     };
 
     processRules().catch(err => console.error("Recurring Processor Error:", err));

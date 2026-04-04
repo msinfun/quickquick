@@ -217,28 +217,27 @@ export default function ReportsView() {
               exit={{ opacity: 0, scale: 0.98 }}
               className="flex flex-col gap-section px-screen"
             >
-              {/* Donut Chart: Scaled Down */}
-              <div className="bg-surface-primary rounded-card p-section flex items-center justify-center relative overflow-hidden h-44 border border-hairline border-border-subtle">
-
-                 <div className="relative w-32 h-32 flex items-center justify-center text-center z-10">
-                    <svg className="w-full h-full transform -rotate-90">
+              {/* Donut Chart: Scaled Up for Readability */}
+              <div className="bg-surface-primary rounded-card p-section flex items-center justify-center relative overflow-hidden h-52 border border-hairline border-border-subtle">
+                 <div className="relative w-44 h-44 flex items-center justify-center text-center z-10">
+                    <svg viewBox="0 0 120 120" className="w-full h-full transform -rotate-90 overflow-visible">
                       {stats.categories.length === 0 ? (
-                        <circle cx="64" cy="64" r="54" stroke="var(--color-surface-glass-heavy)" strokeWidth="12" fill="transparent" />
+                        <circle cx="60" cy="60" r="50" stroke="var(--color-surface-glass-heavy)" strokeWidth="10" fill="transparent" />
                       ) : (
                         stats.categories.map((cat, idx) => {
                           let offset = 0;
                           for (let i = 0; i < idx; i++) offset += stats.categories[i].percentage;
-                          const circumference = 2 * Math.PI * 54;
+                          const circumference = 2 * Math.PI * 50;
                           const dashArray = `${(cat.percentage * circumference) / 100} ${circumference}`;
                           const dashOffset = `-${(offset * circumference) / 100}`;
                           return (
                             <circle
                               key={cat.name}
-                              cx="64"
-                              cy="64"
-                              r="54"
+                              cx="60"
+                              cy="60"
+                              r="50"
                               stroke={CATEGORY_COLORS[cat.name] || (reportType === "income" ? "#10b981" : "#64748b")}
-                              strokeWidth="12"
+                              strokeWidth="10"
                               fill="transparent"
                               strokeDasharray={dashArray}
                               strokeDashoffset={dashOffset}
@@ -249,11 +248,11 @@ export default function ReportsView() {
                         })
                       )}
                     </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-caption font-caption text-text-tertiary uppercase tracking-wide mb-0.5">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-[10px] font-caption text-text-tertiary uppercase tracking-widest mb-0.5 opacity-80">
                         {reportType === "expense" ? "總支出" : "總收入"}
                       </span>
-                      <span className={`text-h2 font-h2 tabular-nums tracking-tight leading-none ${reportType === "income" ? 'text-brand-primary' : 'text-text-primary'}`}>
+                      <span className={`text-h2 font-h2 tabular-nums tracking-tighter leading-none whitespace-nowrap ${reportType === "income" ? 'text-brand-primary' : 'text-text-primary'}`}>
                         ${(reportType === "expense" ? stats.expense : stats.income).toLocaleString()}
                       </span>
                     </div>

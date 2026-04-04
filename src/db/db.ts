@@ -3,12 +3,14 @@ import Dexie, { type EntityTable } from 'dexie';
 export interface Account {
   id?: number;
   name: string;
+  type: "cash" | "bank" | "credit_card";
   current_balance: number;
   initial_balance?: number;
-  snapshot_balance?: number; // 基準快照金額
-  snapshot_date?: string;    // 快照日期 (YYYY/MM/DD)
   icon?: string;
-  billing_cycle?: number;
+  billing_cycle?: number; // 結帳日 (1-31)
+  payment_due_day?: number; // 付款日 (1-31)
+  auto_pay_enabled?: boolean;
+  auto_pay_from_account_id?: number;
 }
 
 export interface Transaction {
@@ -63,8 +65,8 @@ class AccountingDB extends Dexie {
 
   constructor() {
     super('AccountingDB');
-    this.version(4).stores({
-      accounts: '++id, name, current_balance',
+    this.version(5).stores({
+      accounts: '++id, name, type, current_balance',
       transactions: '++id, date, type, main_category, sub_category, account_id, amount, status, item_name, merchant, group_id, rule_id',
       settings: '++id, key, value',
       recurringRules: '++id, type, next_generation_date, is_active'
@@ -181,8 +183,8 @@ export const initializeDefaultData = async () => {
   const accountCount = await db.accounts.count();
   if (accountCount === 0) {
     await db.accounts.bulkAdd([
-      { name: "銀行", initial_balance: 0, current_balance: 0, billing_cycle: 1, icon: "CreditCard" },
-      { name: "現金", initial_balance: 0, current_balance: 0, billing_cycle: 1, icon: "Wallet" },
+      { name: "銀行", type: "bank", initial_balance: 0, current_balance: 0, billing_cycle: 1, icon: "CreditCard" },
+      { name: "現金", type: "cash", initial_balance: 0, current_balance: 0, billing_cycle: 1, icon: "Wallet" },
     ]);
   }
 
@@ -312,10 +314,13 @@ export const getHistoryForAI = async () => {
 // Default Models for Forward Compatibility
 const DEFAULT_ACCOUNT_MODEL: Account = {
   name: "",
+  type: "bank",
   current_balance: 0,
   initial_balance: 0,
   icon: "CreditCard",
   billing_cycle: 1,
+  payment_due_day: 15,
+  auto_pay_enabled: false,
 };
 
 const DEFAULT_TRANSACTION_MODEL: Transaction = {
