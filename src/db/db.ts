@@ -6,6 +6,8 @@ export interface Account {
   type: "cash" | "bank" | "credit_card";
   current_balance: number;
   initial_balance?: number;
+  snapshot_balance?: number; // 基準快照金額
+  snapshot_date?: string;    // 快照日期 (YYYY/MM/DD)
   icon?: string;
   billing_cycle?: number; // 結帳日 (1-31)
   payment_due_day?: number; // 付款日 (1-31)

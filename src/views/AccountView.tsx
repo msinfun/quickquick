@@ -34,7 +34,7 @@ export default function AccountView() {
       return {
         ...acc,
         current_balance: computedBalance
-      } as any;
+      };
     });
   }, [accounts, allTransactions]);
 
