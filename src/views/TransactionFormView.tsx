@@ -89,6 +89,9 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
   const categoriesSetting = useLiveQuery(() =>
     db.settings.where("key").equals("categories").first()
   );
+  const geminiKeySetting = useLiveQuery(() => db.settings.where("key").equals("gemini_api_key").first());
+  const hasApiKey = geminiKeySetting?.value && geminiKeySetting.value.trim() !== "";
+
   const categoriesList = (categoriesSetting?.value as any[]) || [];
   const accounts = useLiveQuery(() => db.accounts.toArray()) || [];
 
@@ -125,15 +128,18 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
 
   const handleSave = async () => {
     if (isSaving) return;
+    setIsSaving(true);
     
     // Validation: account_id must be selected
     if (!sharedInfo.account_id) {
       setValidationError("請先選擇付款帳戶");
+      setIsSaving(false);
       return;
     }
 
     const remainingItems = items.filter(item => item.amount !== 0 || item.item_name);
     if (remainingItems.length === 0 && deletedIds.length === 0) {
+      setIsSaving(false);
       onBack();
       return;
     }
@@ -153,7 +159,8 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
           relatedCount: relatedGroupCount,
           hasRule: hasRule
         });
-        return; // 暫停儲存，等待使用者選擇
+        setIsSaving(false); // 彈出選項時解除儲存中狀態，讓使用者可重新操作
+        return; 
       }
     }
     
@@ -161,7 +168,6 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
   };
 
   const executeSave = async (applyToAll: boolean, applyToRule: boolean) => {
-    setIsSaving(true);
     setGroupEditPrompt(null);
     try {
       const remainingItems = items.filter(item => item.amount !== 0 || item.item_name);
@@ -174,7 +180,19 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
         // 1. Physically delete items removed in UI
         if (deletedIds.length > 0) {
           for (const id of deletedIds) {
-            await deleteTransaction(id);
+            const tx = await db.transactions.get(id);
+            if (tx) {
+              // Manually revert account balance if not pending
+              if (tx.status !== 'pending' && tx.account_id !== undefined) {
+                const account = await db.accounts.get(tx.account_id);
+                if (account) {
+                  await db.accounts.update(tx.account_id, { 
+                    current_balance: account.current_balance - tx.amount 
+                  });
+                }
+              }
+              await db.transactions.delete(id);
+            }
           }
         }
 

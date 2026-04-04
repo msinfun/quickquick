@@ -47,6 +47,28 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
 
   const hasApiKey = geminiKeySetting?.value && geminiKeySetting.value.trim() !== "";
 
+  // Memory Leak & Resource Cleanup
+  useEffect(() => {
+    return () => {
+      // Force clean up media resources and timers on unmount
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch(e) {}
+        recognitionRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try { 
+          mediaRecorderRef.current.stop(); 
+          mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        } catch(e) {}
+        mediaRecorderRef.current = null;
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
   // Shared Helper to prepare AI context
   const getAIContext = async () => {
     const categoriesList = (categoriesSetting?.value as any[]) || [];
