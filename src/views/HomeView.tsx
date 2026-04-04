@@ -266,7 +266,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
                 <span className="text-caption font-caption text-text-secondary uppercase tracking-wide">預算進度</span>
                 <span className={`text-body font-body leading-normal ${spentPercent > 90 ? 'text-semantic-danger' : 'text-brand-primary'}`}>{spentPercent}%</span>
               </div>
-              <span className="text-body font-caption text-text-secondary uppercase tracking-widest">
+              <span className="text-body font-caption text-text-secondary uppercase tracking-tight">
                 {totalBudget - totalSpent >= 0 ? `剩餘 $${(totalBudget - totalSpent).toLocaleString()}` : `超支 $${Math.abs(totalBudget - totalSpent).toLocaleString()}`}
               </span>
             </div>
@@ -324,7 +324,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
                           <span className="font-body text-body leading-normal text-text-primary truncate">
                             {isGroup ? entry.merchant : (displayTx.item_name || displayTx.merchant || displayTx.main_category)}
                           </span>
-                          <span className="text-caption font-caption text-text-tertiary uppercase tracking-wide mt-0.5 truncate">
+                          <span className="text-caption font-caption text-text-tertiary uppercase tracking-normal mt-0.5 truncate">
                             {isGroup
                               ? Array.from(new Set(entry.data.map((t: any) => t.main_category))).join(' · ')
                               : `${displayTx.main_category} · ${displayTx.sub_category}`

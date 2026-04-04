@@ -152,7 +152,7 @@ export default function ReconciliationView({ account, onBack }: ReconciliationVi
             <span className="text-[10px] font-medium text-brand-primary bg-brand-primary/10 px-1.5 py-0.5 rounded-inner truncate shrink-0 border border-brand-primary/20">
               {account.name}
             </span>
-            <span className="text-[10px] font-caption text-text-tertiary tracking-widest whitespace-nowrap opacity-80">
+            <span className="text-[10px] font-caption text-text-tertiary tracking-normal whitespace-nowrap opacity-80">
               {startStr.replace(/^\d{4}\//, '')} ~ {endStr.replace(/^\d{4}\//, '')}
             </span>
           </div>
@@ -177,7 +177,7 @@ export default function ReconciliationView({ account, onBack }: ReconciliationVi
           {groupedTransactions.map(([date, txs]) => (
             <div key={date} className="flex flex-col gap-inner">
               <div className="px-inner flex justify-between items-center">
-                <span className="text-[11px] font-caption text-text-tertiary tracking-[0.2em] uppercase">{date}</span>
+                <span className="text-[11px] font-caption text-text-tertiary tracking-wide uppercase">{date}</span>
               </div>
               <div className="bg-surface-primary rounded-card overflow-hidden divide-y-hairline divide-border-subtle border border-hairline border-border-subtle shadow-xl">
                 {txs.map((entry) => (

@@ -242,7 +242,7 @@ export default function AccountDetailView({
           </div>
           <div className="flex flex-col overflow-hidden">
             <h1 className="text-h3 font-h3 tracking-tight text-text-primary leading-tight whitespace-nowrap truncate">{account.name}</h1>
-            <span className="text-text-tertiary text-caption font-caption uppercase tracking-wide truncate">
+            <span className="text-text-tertiary text-caption font-caption uppercase tracking-normal truncate">
               {account.type === 'credit_card' ? `結帳日：每月 ${account.billing_cycle} 號` : `帳單週期日：每月 ${account.billing_cycle} 號`}
             </span>
           </div>
@@ -327,7 +327,7 @@ export default function AccountDetailView({
                 開始對帳
               </button>
             </div>
-            <span className="text-text-tertiary font-caption text-caption uppercase tracking-wide">
+            <span className="text-text-tertiary font-caption text-caption uppercase tracking-normal">
               {periodTransactions.length} 筆紀錄 · {startStr.replace(/^\d{4}\//, '')} ~ {endStr.replace(/^\d{4}\//, '')}
             </span>
           </div>

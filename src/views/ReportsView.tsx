@@ -194,7 +194,7 @@ export default function ReportsView() {
                 : 'bg-surface-primary border-hairline border-border-subtle opacity-60'
               }`}
             >
-              <span className="text-caption font-caption text-semantic-danger uppercase tracking-widest mb-0.5">支出</span>
+              <span className="text-caption font-caption text-semantic-danger uppercase tracking-wide mb-0.5">支出</span>
               <span className="text-h3 font-h3 tabular-nums tracking-tighter text-text-primary leading-none">
                 ${stats.expense.toLocaleString()}
               </span>

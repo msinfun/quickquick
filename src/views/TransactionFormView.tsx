@@ -454,7 +454,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
       <div className="flex-1 overflow-y-auto no-scrollbar px-screen pb-nav-clearance flex flex-col gap-section bg-bg-base">
         {/* Top Amount Region */}
         <div className="flex flex-col items-center py-[var(--size-icon-container)]">
-          <span className={`text-[2.5rem] font-h2 tabular-nums tracking-tight leading-none ${totalAmount < 0 ? 'text-semantic-danger' : 'text-brand-primary'}`}>
+          <span className={`text-[2.5rem] font-h2 tabular-nums tracking-tighter leading-none ${totalAmount < 0 ? 'text-semantic-danger' : 'text-brand-primary'}`}>
             ${Math.abs(totalAmount).toLocaleString()}
           </span>
           <div className="mt-item px-item py-1.5 rounded-button bg-surface-glass border border-hairline border-border-subtle text-caption font-caption uppercase tracking-wide text-text-tertiary">
@@ -591,7 +591,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
                             <input
                               type="number"
                               inputMode="decimal"
-                              className={`w-full bg-bg-base border border-hairline border-border-subtle rounded-input p-item text-right text-h3 font-h3 outline-none focus:border-brand-primary/50 transition-all tabular-nums ${
+                              className={`w-full bg-bg-base border border-hairline border-border-subtle rounded-input p-item text-right text-h3 font-h3 outline-none focus:border-brand-primary/50 transition-all tabular-nums tracking-tight ${
                                 item.type === 'expense' ? 'text-semantic-danger' : 
                                 item.type === 'income' ? 'text-brand-primary' : 
                                 'text-text-tertiary'
