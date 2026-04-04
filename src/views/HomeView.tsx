@@ -94,14 +94,22 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
       }
     });
 
-    const groupedEntries = Object.entries(groups).map(([id, txs]) => ({
-      type: 'group',
-      id,
-      data: txs,
-      totalAmount: txs.reduce((acc, t) => acc + t.amount, 0),
-      merchant: txs[0].merchant || "多項交易項目",
-      date: txs[0].date
-    }));
+    const groupedEntries: any[] = [];
+    Object.entries(groups).forEach(([id, txs]) => {
+      if (txs.length === 1) {
+        // 如果該群組只有一筆明細，降級為單筆顯示
+        ungrouped.push({ type: 'single', data: txs[0], id: txs[0].id });
+      } else {
+        groupedEntries.push({
+          type: 'group',
+          id,
+          data: txs,
+          totalAmount: txs.reduce((acc, t) => acc + t.amount, 0),
+          merchant: txs[0].merchant || "多項交易項目",
+          date: txs[0].date
+        });
+      }
+    });
 
     return [...ungrouped, ...groupedEntries].sort((a, b) => (b.id || 0) - (a.id || 0));
   }, [selectedDate, allTransactions]);

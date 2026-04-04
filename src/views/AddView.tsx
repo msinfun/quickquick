@@ -302,12 +302,20 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
     const categoriesSettingRecord = await db.settings.where("key").equals("categories").first();
     const categoriesList = (categoriesSettingRecord?.value as any[]) || [];
 
+    const fallbackMerchant = results.find(r => r.merchant)?.merchant || "";
+    const fallbackInvoice = results.find(r => r.invoice_number)?.invoice_number || "";
+
     const receiptGroups: Record<string, any[]> = {};
     results.forEach((res: any) => {
-      const key = `${res.date || 'unknown'}_${res.merchant || 'unknown'}_${res.invoice_number || ''}`;
+      const m = res.merchant || fallbackMerchant || 'unknown';
+      const inv = res.invoice_number || fallbackInvoice || '';
+      const d = res.date || new Date().toISOString().split('T')[0];
+      
+      const key = `${d}_${m}_${inv}`;
       if (!receiptGroups[key]) receiptGroups[key] = [];
       receiptGroups[key].push(res);
     });
+
     const getLocalDateString = () => {
       const today = new Date();
       // 扣除本地時區偏差，確保 toISOString 產出的是正確的本地日期
