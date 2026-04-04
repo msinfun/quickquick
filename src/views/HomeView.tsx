@@ -287,7 +287,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
             </span>
           </div>
 
-          <div className="bg-surface-primary rounded-card overflow-hidden divide-y-hairline divide-border-subtle shadow-xl border border-hairline border-border-subtle">
+          <div className="bg-surface-primary rounded-card overflow-hidden shadow-xl border border-hairline border-border-subtle">
             {selectedDateTransactions.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-text-tertiary gap-item">
                 <CalendarIcon className="size-icon-xl" />
@@ -312,7 +312,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
                       className="flex items-center justify-between px-section py-item bg-surface-primary active:bg-surface-glass active:opacity-active transition-colors duration-fast"
                     >
                       <div className="flex items-center gap-item flex-1 min-w-0">
-                        <div className="size-icon-container text-[3rem] rounded-inner bg-bg-base flex items-center justify-center text-brand-primary group-hover:scale-110 transition-transform relative shrink-0">
+                        <div className="size-icon-container rounded-inner bg-bg-base flex items-center justify-center text-brand-primary group-hover:scale-110 transition-transform relative shrink-0">
                           {isGroup ? <Box className="size-icon-md text-brand-primary" /> : getIcon(displayTx.main_category, displayTx.sub_category)}
                           {isGroup && (
                             <div className="absolute -top-1 -right-1 bg-brand-primary text-bg-base text-caption font-body size-icon-md rounded-button flex items-center justify-center border-2 border-surface-primary">
@@ -332,7 +332,7 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
                           </span>
                         </div>
                       </div>
-                      <span className={`font-h2 text-h3 tabular-nums tracking-tighter shrink-0 pl-item ${displayTx.type === 'expense' ? 'text-semantic-danger' : displayTx.type === 'income' ? 'text-brand-primary' : 'text-text-tertiary'}`}>
+                      <span className={`font-body text-h3 tabular-nums shrink-0 pl-item ${displayTx.type === 'expense' ? 'text-semantic-danger' : displayTx.type === 'income' ? 'text-brand-primary' : 'text-text-tertiary'}`}>
                         {amount < 0 ? '-' : amount > 0 ? '+' : ''}${Math.abs(amount).toLocaleString()}
                       </span>
                     </div>

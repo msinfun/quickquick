@@ -308,13 +308,19 @@ export default function AddView({ onBack, onSuccess }: AddViewProps) {
       if (!receiptGroups[key]) receiptGroups[key] = [];
       receiptGroups[key].push(res);
     });
+    const getLocalDateString = () => {
+      const today = new Date();
+      // 扣除本地時區偏差，確保 toISOString 產出的是正確的本地日期
+      const localDate = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
+      return localDate.toISOString().split('T')[0].replace(/-/g, '/');
+    };
 
     await db.transaction('rw', [db.transactions, db.accounts], async () => {
       for (const groupItems of Object.values(receiptGroups)) {
         const groupId = groupItems.length > 1 ? (window.crypto?.randomUUID?.() || Date.now().toString()) : undefined;
 
         for (const res of groupItems) {
-          const finalDate = (res.date || new Date().toISOString().split('T')[0]).replace(/-/g, '/');
+          const finalDate = res.date ? res.date.replace(/-/g, '/') : getLocalDateString();
           const finalAmount = parseFloat(String(res.amount || 0).replace(/[^\d.-]/g, ''));
           const finalItemName = res.item_name || res.itemName || "未指定項目";
           const finalMainCat = res.main_category || res.mainCategory || "飲食";

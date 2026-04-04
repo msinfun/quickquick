@@ -88,14 +88,14 @@ export default function AccountView() {
         <section>
           <div className="bg-surface-primary rounded-card p-item border border-hairline border-border-subtle flex flex-col gap-item relative overflow-hidden group">
             <p className="text-text-tertiary font-caption uppercase tracking-wide text-caption leading-normal">總資產</p>
-            <span className="text-h2 font-h2 tabular-nums tracking-tight leading-none text-text-primary">
+            <span className="text-h2 font-h2 tabular-nums leading-none text-text-primary">
               {totalBalance < 0 ? '-' : ''}${Math.abs(totalBalance).toLocaleString()}
             </span>
           </div>
         </section>
 
         <section className="flex flex-col gap-item">
-          <div className="bg-surface-primary rounded-card border border-hairline border-border-subtle divide-y-hairline divide-border-subtle overflow-hidden">
+          <div className="bg-surface-primary rounded-card border border-hairline border-border-subtle overflow-hidden">
             {accountsWithRealBalance.map((acc) => (
               <button
                 key={acc.id}
@@ -103,14 +103,14 @@ export default function AccountView() {
                 className="w-full px-screen py-item flex items-center justify-between active:bg-surface-glass active:opacity-active transition-colors duration-fast ease-apple text-left"
               >
                 <div className="flex items-center gap-item">
-                  <div className="size-icon-container rounded-button bg-bg-base flex items-center justify-center shadow-inner shrink-0">
+                  <div className="size-icon-container rounded-inner bg-bg-base flex items-center justify-center shadow-inner shrink-0">
                     {renderIcon(acc.icon || "Tag")}
                   </div>
                   <div className="flex flex-col">
                     <span className="font-h3 text-body leading-normal text-text-primary">{acc.name}</span>
                   </div>
                 </div>
-                <span className={`font-h2 text-h3 tabular-nums tracking-tight ${acc.current_balance < 0 ? 'text-semantic-danger' : 'text-brand-primary'}`}>
+                <span className={`font-body text-h3 tabular-nums ${acc.current_balance < 0 ? 'text-semantic-danger' : 'text-brand-primary'}`}>
                   {acc.current_balance < 0 ? '-' : ''}${Math.abs(acc.current_balance).toLocaleString()}
                 </span>
               </button>

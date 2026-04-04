@@ -92,21 +92,18 @@ export class GeminiService {
       });
 
       if (!response.ok) {
-        let errorMessage = "發生未知錯誤，請稍後再試。";
-        switch (response.status) {
-          case 400: errorMessage = "請求格式錯誤 (400)。"; break;
-          case 401: errorMessage = "未授權，請檢查 API 權限設定 (401)。"; break;
-          case 403: errorMessage = "拒絕存取 (403)。"; break;
-          case 404: errorMessage = "找不到請求的資源 (404)。"; break;
-          case 408: errorMessage = "請求超時 (408)。"; break;
-          case 429: errorMessage = "請求次數過多，請稍後再試 (429)。"; break;
-          case 500: errorMessage = "伺服器內部錯誤 (500)。"; break;
-          case 502: errorMessage = "錯誤的閘道 (502)。"; break;
-          case 503: errorMessage = "服務暫時無法使用，請稍後再試 (503)。"; break;
-          case 504: errorMessage = "閘道超時 (504)。"; break;
-          default: errorMessage = `連線錯誤 (${response.status})。`;
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error?.message || "未知錯誤";
+
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          throw new Error("API 金鑰無效或權限不足，請至「設定」重新檢查金鑰。");
+        } else if (response.status === 429) {
+          throw new Error("API 呼叫次數已達配額上限，請稍後再試。");
+        } else if (response.status >= 500) {
+          throw new Error("Google AI 伺服器目前不穩定，請稍後再試。");
+        } else {
+          throw new Error(`AI 解析失敗 (${response.status}): ${errorMessage}`);
         }
-        throw new Error(errorMessage);
       }
 
       const result = await response.json();
