@@ -2,24 +2,7 @@ import { ChevronLeft, Edit2, Copy, Trash2, Calendar, Database, Box, Tag, CreditC
 import { motion } from "framer-motion";
 import { ICON_MAP } from "@/constants/icons";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/db/db";
-
-interface Transaction {
-  id?: number;
-  date: string;
-  type: "expense" | "income" | "transfer";
-  main_category: string;
-  sub_category: string;
-  account_id: number;
-  amount: number;
-  item_name?: string;
-  merchant?: string;
-  invoice_number?: string;
-  note?: string;
-  status?: string;
-  group_id?: string;
-  rule_id?: number;
-}
+import { db, Transaction } from "@/db/db";
 
 interface TransactionDetailViewProps {
   transactions: Transaction | Transaction[];
@@ -52,6 +35,12 @@ export default function TransactionDetailView({
   );
   const categories = (categoriesSetting?.value as any[]) || [];
 
+  const resolvedAccount = useLiveQuery(async () => 
+    mainTx.account_id ? await db.accounts.get(mainTx.account_id) : undefined
+  , [mainTx.account_id]);
+
+  const displayAccountName = accountName || resolvedAccount?.name;
+
   const getIconName = (mainCat: string, subCat?: string) => {
     const main = categories.find(c => c.name === mainCat);
     if (!main) return "Tag";
@@ -62,6 +51,20 @@ export default function TransactionDetailView({
   const renderIcon = (name: string, className: string = "size-icon-sm text-brand-primary") => {
     const IconComponent = ICON_MAP[name] || Box;
     return <IconComponent className={className} />;
+  };
+
+  const getDimmedClass = (text?: string) => {
+    const placeholders = ["無紀錄", "未指定", "無商家資訊", "無記錄", "無"];
+    return (!text || placeholders.includes(text)) 
+      ? "text-text-tertiary italic font-normal" 
+      : "text-text-primary font-h3";
+  };
+
+  const getAlertClass = (text?: string) => {
+    const placeholders = ["未指定", "無紀錄", "無記錄", "無"];
+    return (!text || placeholders.includes(text)) 
+      ? "text-semantic-danger font-h3" 
+      : "text-text-primary font-h3";
   };
 
   return (
@@ -138,10 +141,30 @@ export default function TransactionDetailView({
 
           {/* Section 1: Hero Field Card */}
           <div className="bg-surface-primary rounded-card p-item border border-hairline border-border-subtle grid grid-cols-2 gap-item shadow-sm">
-            <HeroField label="日期" value={mainTx.date.replace(/\//g, ' / ')} icon={<Calendar className="size-icon-md" />} />
-            <HeroField label="付款帳戶" value={accountName || "預設帳戶"} icon={<CreditCard className="size-icon-md" />} />
-            <HeroField label="商家" value={mainTx.merchant || "無商家資訊"} icon={<Store className="size-icon-md" />} />
-            <HeroField label="發票號碼" value={mainTx.invoice_number || "無記錄"} icon={<Hash className="size-icon-md" />} />
+            <HeroField 
+              label="日期" 
+              value={mainTx.date ? mainTx.date.replace(/\//g, ' / ') : "未指定"} 
+              icon={<Calendar className="size-icon-md" />} 
+              valueClassName={getAlertClass(mainTx.date)}
+            />
+            <HeroField 
+              label="付款帳戶" 
+              value={displayAccountName || "未指定"} 
+              icon={<CreditCard className="size-icon-md" />} 
+              valueClassName={getAlertClass(displayAccountName)}
+            />
+            <HeroField 
+              label="商家" 
+              value={mainTx.merchant || "無商家資訊"} 
+              icon={<Store className="size-icon-md" />} 
+              valueClassName={getDimmedClass(mainTx.merchant)}
+            />
+            <HeroField 
+              label="發票號碼" 
+              value={mainTx.invoice_number || "無紀錄"} 
+              icon={<Hash className="size-icon-md" />} 
+              valueClassName={`uppercase tracking-widest ${getDimmedClass(mainTx.invoice_number)}`}
+            />
           </div>
 
           {/* Section 2: Item List Card */}
@@ -189,14 +212,14 @@ export default function TransactionDetailView({
   );
 }
 
-function HeroField({ label, value, icon }: { label: string, value: string, icon: React.ReactNode }) {
+function HeroField({ label, value, icon, valueClassName }: { label: string, value: string, icon: React.ReactNode, valueClassName?: string }) {
   return (
     <div className="flex flex-col gap-micro py-micro group">
       <div className="flex items-center gap-inner">
         <span className="text-brand-primary scale-75 origin-left">{icon}</span>
         <span className="text-caption font-caption text-text-tertiary uppercase tracking-wide leading-none">{label}</span>
       </div>
-      <span className="text-body font-h3 text-text-primary truncate">{value}</span>
+      <span className={`text-body truncate ${valueClassName || 'text-text-primary font-h3'}`}>{value}</span>
     </div>
   );
 }

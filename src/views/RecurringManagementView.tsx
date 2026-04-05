@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { ChevronLeft, Repeat, Play, Pause, Trash2, Calendar, Clock, CreditCard } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ChevronLeft, Repeat, Play, Pause, Trash2, Calendar, Clock, CreditCard, Info, DollarSign, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, RecurringRule } from "@/db/db";
+import { db, RecurringRule, Transaction } from "@/db/db";
 import SwipeableDelete from "@/components/SwipeableDelete";
+import TransactionDetailView from "./TransactionDetailView";
 
 interface RecurringManagementViewProps {
   onBack: () => void;
@@ -13,6 +14,13 @@ export default function RecurringManagementView({ onBack }: RecurringManagementV
   const allRules = useLiveQuery(() => db.recurringRules.toArray()) || [];
   const [swipedId, setSwipedId] = useState<number | null>(null);
   const [viewType, setViewType] = useState<"installment" | "recurring">("installment");
+  const [selectedRule, setSelectedRule] = useState<RecurringRule | null>(null);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+
+  const ruleTransactions = useLiveQuery(
+    () => (selectedRule ? db.transactions.where("rule_id").equals(selectedRule.id!).toArray() : []),
+    [selectedRule]
+  ) || [];
 
   const formatFrequency = (freq: string, interval?: number) => {
     const unit = freq === 'daily' ? '天' : freq === 'weekly' ? '週' : freq === 'monthly' ? '個月' : '年';
@@ -22,83 +30,85 @@ export default function RecurringManagementView({ onBack }: RecurringManagementV
   const activeRules = allRules.filter(r => r.is_active && r.type === viewType).sort((a, b) => new Date(a.next_generation_date).getTime() - new Date(b.next_generation_date).getTime());
   const inactiveRules = allRules.filter(r => !r.is_active && r.type === viewType).sort((a, b) => new Date(b.next_generation_date).getTime() - new Date(a.next_generation_date).getTime());
 
-  const toggleActive = async (id: number, currentStatus: boolean | undefined) => {
-    await db.recurringRules.update(id, { is_active: !currentStatus });
-  };
-
   const deleteRule = async (id: number) => {
     await db.recurringRules.delete(id);
+    if (selectedRule?.id === id) setSelectedRule(null);
   };
 
   const renderRuleGroup = (title: string, rules: RecurringRule[]) => {
     if (rules.length === 0) return null;
     return (
       <div className="flex flex-col gap-inner">
-        <h3 className="text-caption font-caption text-text-tertiary px-inner uppercase tracking-wide">{title}</h3>
-        <div className="bg-surface-primary rounded-card border border-hairline border-border-subtle overflow-hidden shadow-sm">
+        <h3 className="text-caption font-caption text-text-tertiary px-inner uppercase tracking-wide opacity-50">{title}</h3>
+        <div className="flex flex-col gap-inner px-px">
           {rules.map((rule, index) => {
             const template = rule.template_transaction as any;
+            const items = template?.items || [];
             const isInstallment = rule.type === 'installment';
-            const iconName = template?.items?.[0]?.main_category || "定期";
             
+            const displayTitle = (items.length > 1 && template.merchant) 
+              ? template.merchant 
+              : (items[0]?.item_name || template.merchant || '未命名排程');
+
+            const totalAmount = Math.abs(rule.total_amount || template?.amount || (items.reduce((acc: number, item: any) => acc + (item.amount || 0), 0)) || 0);
+            const perAmount = isInstallment && rule.total_installments 
+              ? Math.ceil(totalAmount / rule.total_installments) 
+              : totalAmount;
+
             return (
               <motion.div
                 key={rule.id}
                 layout
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className={`relative ${index !== rules.length - 1 ? 'border-b border-hairline border-border-subtle' : ''}`}
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                onClick={() => setSelectedRule(rule)}
+                className="group relative"
               >
                 <SwipeableDelete
                   onDelete={() => deleteRule(rule.id!)}
                   isOpen={swipedId === rule.id}
                   onOpenStateChange={(open) => setSwipedId(open ? rule.id || null : null)}
                 >
-                  <div className="w-full p-item flex flex-col gap-inner bg-surface-primary active:bg-surface-glass transition-colors">
+                  <div className="w-full p-item flex flex-col gap-inner bg-surface-primary rounded-card border border-hairline border-border-subtle active:bg-surface-glass transition-all duration-normal ease-apple cursor-pointer shadow-sm group-active:scale-[0.98]">
                     <div className="flex justify-between items-start">
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-1 flex-1 min-w-0 pr-4">
                         <div className="flex items-center gap-1.5">
                           {!rule.is_active && (
-                            <span className="px-1.5 py-0.5 rounded-inner bg-semantic-danger/10 text-semantic-danger text-caption font-h3 tracking-wide uppercase">
-                              已停用
+                            <span className="px-1.5 py-0.5 rounded-inner bg-surface-glass text-text-tertiary text-[10px] font-h3 tracking-wide uppercase shrink-0 border border-border-subtle">
+                              已結案
                             </span>
                           )}
                         </div>
-                        <span className="font-h3 text-body tracking-tight text-text-primary">
-                          {template?.merchant || template?.items?.[0]?.item_name || '未命名排程'}
+                        <span className="text-body font-body tracking-tight text-text-primary truncate block w-full">
+                          {displayTitle}
                         </span>
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-caption font-caption text-text-tertiary">
                             {formatFrequency(rule.frequency, rule.interval)}
                           </span>
                           <span className="text-caption font-caption text-text-tertiary">·</span>
-                          <span className="text-caption font-caption text-text-tertiary">
+                          <span className="text-caption font-caption text-text-tertiary truncate">
                             下次: {rule.next_generation_date}
                           </span>
                         </div>
                       </div>
                       
-                      <div className="flex flex-col items-end gap-1">
-                        <span className="font-h2 text-h3 tabular-nums tracking-tight text-text-primary">
-                          ${Math.abs(rule.total_amount || template?.amount || (template?.items?.reduce((acc: number, item: any) => acc + (item.amount || 0), 0)) || 0).toLocaleString()}
+                      <div className="flex flex-col items-end gap-0.5 shrink-0">
+                        <span className="text-body font-h3 tabular-nums tracking-tight text-text-primary leading-none mb-0.5">
+                          ${totalAmount.toLocaleString()}
                         </span>
                         {isInstallment && (
-                          <span className="text-caption font-caption text-brand-primary">
-                            進度: {rule.installments_paid || 0} / {rule.total_installments}
-                          </span>
+                          <div className="flex flex-col items-end">
+                            <span className="text-caption font-caption text-text-tertiary leading-tight">
+                              每期 ${perAmount.toLocaleString()}
+                            </span>
+                            <span className="text-caption font-caption text-text-tertiary leading-tight">
+                              進度: {rule.installments_paid || 0} / {rule.total_installments}
+                            </span>
+                          </div>
                         )}
                       </div>
-                    </div>
-                    
-                    <div className="flex justify-start mt-1">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); toggleActive(rule.id!, rule.is_active); }}
-                        className={`flex items-center justify-center gap-1.5 px-section py-1.5 rounded-button font-h3 text-caption active:scale-95 transition-all outline-none ${rule.is_active ? 'bg-surface-glass text-text-secondary hover:bg-surface-glass-heavy border border-border-subtle' : 'bg-brand-primary text-bg-base shadow-sm shadow-brand-primary/20'}`}
-                      >
-                        {rule.is_active ? <Pause className="size-icon-sm" /> : <Play className="size-icon-sm" />}
-                        {rule.is_active ? "暫停規則" : "恢復規則"}
-                      </button>
                     </div>
                   </div>
                 </SwipeableDelete>
@@ -107,6 +117,140 @@ export default function RecurringManagementView({ onBack }: RecurringManagementV
           })}
         </div>
       </div>
+    );
+  };
+
+  const RuleDetailModal = () => {
+    if (!selectedRule) return null;
+    
+    const template = selectedRule.template_transaction as any;
+    const items = template?.items || [];
+    const itemName = items[0]?.item_name || template.merchant || "未命名項目";
+    
+    const sortedTxs = [...ruleTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    const totalAmount = selectedRule.total_amount || (selectedRule.type === 'installment' ? (template.amount * (selectedRule.total_installments || 1)) : template.amount) || 0;
+    const paidAmount = ruleTransactions
+      .filter(tx => tx.status === 'confirmed' || tx.status === 'reconciled')
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+    const remainingAmount = Math.max(0, Math.abs(totalAmount) - paidAmount);
+
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[80] flex items-center justify-center p-screen bg-bg-base/90 backdrop-blur-md"
+        onClick={() => setSelectedRule(null)}
+      >
+        <motion.div
+          initial={{ scale: 0.98, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.98, opacity: 0, y: 10 }}
+          transition={{ type: "spring", damping: 25, stiffness: 300 }}
+          className="w-full max-w-sm bg-surface-primary rounded-[24px] border border-border-subtle shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Minimal Header */}
+          <div className="flex flex-col px-item pt-item pb-INNER items-center text-center shrink-0">
+            <h2 className="text-body font-h2 text-text-primary tracking-tight truncate w-full px-4">{itemName}</h2>
+          </div>
+
+          <div className="flex-1 overflow-y-auto no-scrollbar p-item flex flex-col gap-section">
+            {/* Minimal Summary Box */}
+            <div className="flex justify-between px-inner">
+              <div className="flex flex-col items-center flex-1">
+                <span className="text-[11px] font-caption text-text-tertiary uppercase tracking-wider mb-0.5">總額</span>
+                <span className="text-body font-body tabular-nums text-text-secondary">${totalAmount.toLocaleString()}</span>
+              </div>
+              <div className="w-[1px] h-8 bg-border-subtle self-center opacity-30" />
+              <div className="flex flex-col items-center flex-1">
+                <span className="text-[11px] font-caption text-text-tertiary uppercase tracking-wider mb-0.5">{selectedRule.type === 'installment' ? '已繳' : '累計'}</span>
+                <span className="text-body font-body tabular-nums text-text-primary">${paidAmount.toLocaleString()}</span>
+              </div>
+              <div className="w-[1px] h-8 bg-border-subtle self-center opacity-30" />
+              <div className="flex flex-col items-center flex-1">
+                <span className="text-[11px] font-caption text-text-tertiary uppercase tracking-wider mb-0.5">剩餘</span>
+                <span className="text-body font-body tabular-nums text-text-tertiary">${remainingAmount.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 py-3 border-y border-hairline border-border-subtle">
+              <div className="flex justify-between items-center text-[13px]">
+                <span className="text-text-tertiary flex items-center gap-2">
+                  <Calendar className="size-3.5 opacity-50" /> 預計週期
+                </span>
+                <span className="text-text-secondary font-body">{formatFrequency(selectedRule.frequency, selectedRule.interval)}</span>
+              </div>
+              <div className="flex justify-between items-center text-[13px]">
+                <span className="text-text-tertiary flex items-center gap-2">
+                  <Repeat className="size-3.5 opacity-50" /> 當前進度
+                </span>
+                <span className="text-text-secondary font-body">
+                  {selectedRule.type === 'installment' ? `${selectedRule.installments_paid || 0} / ${selectedRule.total_installments}` : "定期產生"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[13px]">
+                <span className="text-text-tertiary flex items-center gap-2">
+                  <Clock className="size-3.5 opacity-50" /> 下次預計
+                </span>
+                <span className="text-text-secondary font-body">{selectedRule.next_generation_date}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <h3 className="text-[11px] font-caption text-text-tertiary px-inner uppercase tracking-widest text-center">交易明細</h3>
+              <div className="flex flex-col gap-1">
+                {sortedTxs.length === 0 ? (
+                  <div className="p-8 text-center text-text-tertiary opacity-30 flex flex-col items-center gap-2">
+                    <Info className="size-8" strokeWidth={1} />
+                    <span className="text-[12px]">無交易紀錄</span>
+                  </div>
+                ) : (
+                  sortedTxs.map((tx) => {
+                    const isConfirmed = tx.status === 'confirmed' || tx.status === 'reconciled';
+                    const isPending = tx.status === 'pending';
+                    
+                    return (
+                      <div 
+                        key={tx.id} 
+                        onClick={() => setSelectedTx(tx)}
+                        className="py-inner px-inner rounded-inner flex items-center justify-between active:bg-surface-glass transition-colors cursor-pointer group"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-[13px] font-body text-text-secondary group-active:text-text-primary">{tx.date}</span>
+                          <div className="mt-0.5">
+                            {isConfirmed ? (
+                              <span className="text-[10px] text-text-tertiary opacity-60">已入帳</span>
+                            ) : isPending ? (
+                              <span className="px-1 py-0.5 rounded-[4px] bg-surface-glass text-text-secondary text-[9px] font-h3 uppercase tracking-wider border border-border-subtle">
+                                待審核
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-text-tertiary opacity-60">未發生</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[14px] font-body tabular-nums text-text-primary">
+                          ${Math.abs(tx.amount).toLocaleString()}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="p-item bg-surface-primary shrink-0">
+             <button 
+              onClick={() => setSelectedRule(null)}
+              className="w-full py-3 rounded-button bg-surface-glass text-text-secondary font-h3 active:scale-[0.98] active:bg-surface-glass-heavy transition-all border border-border-subtle text-[14px]"
+             >
+                關閉
+             </button>
+          </div>
+        </motion.div>
+      </motion.div>
     );
   };
 
@@ -133,13 +277,13 @@ export default function RecurringManagementView({ onBack }: RecurringManagementV
         <div className="flex bg-surface-glass p-1 rounded-button border border-hairline border-border-subtle shrink-0">
           <button
             onClick={() => setViewType('installment')}
-            className={`flex-1 py-2 rounded-inner text-caption font-h3 tracking-wide transition-all ease-apple ${viewType === 'installment' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-primary'}`}
+            className={`flex-1 py-3 rounded-inner text-caption font-h3 tracking-wide transition-all ease-apple ${viewType === 'installment' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-primary'}`}
           >
             分期付款
           </button>
           <button
             onClick={() => setViewType('recurring')}
-            className={`flex-1 py-2 rounded-inner text-caption font-h3 tracking-wide transition-all ease-apple ${viewType === 'recurring' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-primary'}`}
+            className={`flex-1 py-3 rounded-inner text-caption font-h3 tracking-wide transition-all ease-apple ${viewType === 'recurring' ? 'bg-surface-primary text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-primary'}`}
           >
             定期紀錄
           </button>
@@ -152,11 +296,27 @@ export default function RecurringManagementView({ onBack }: RecurringManagementV
           </div>
         ) : (
           <div className="flex flex-col gap-section">
-            {renderRuleGroup("執行中的規則", activeRules)}
-            {renderRuleGroup("已暫停或結束的規則", inactiveRules)}
+            {renderRuleGroup(viewType === "installment" ? "進行中的分期" : "執行中的規則", activeRules)}
+            {renderRuleGroup(viewType === "installment" ? "已結束的分期" : "已暫停或結束的規則", inactiveRules)}
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {selectedRule && <RuleDetailModal />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedTx && (
+          <div className="fixed inset-0 z-[100]">
+            <TransactionDetailView 
+              transactions={selectedTx} 
+              onBack={() => setSelectedTx(null)} 
+            />
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
+

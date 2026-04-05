@@ -74,8 +74,8 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
   });
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [groupEditPrompt, setGroupEditPrompt] = useState<{isOpen: boolean, relatedCount: number, hasRule?: boolean} | null>(null);
   const [loadingCategoryIdx, setLoadingCategoryIdx] = useState<number | null>(null);
+  const [recurringEditPrompt, setRecurringEditPrompt] = useState(false);
 
   const isExistingInstallment = useMemo(() => {
     if (!initialData) return false;
@@ -144,31 +144,19 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
       return;
     }
 
-    const firstInitial = Array.isArray(initialData) ? initialData[0] : initialData;
-    const hasRule = !!(firstInitial?.rule_id || remainingItems.some(it => it.rule_id));
-    const groupId = remainingItems[0]?.group_id || (firstInitial as any)?.group_id;
-    const hasGroupId = !!groupId;
-    const isEditMode = !!(firstInitial?.id || remainingItems.some(it => it.id));
-
-    if (isEditMode && !groupEditPrompt) {
-      const relatedGroupCount = hasGroupId ? await db.transactions.where('group_id').equals(groupId).count() : 0;
-      
-      if (hasRule || relatedGroupCount > 1) {
-        setGroupEditPrompt({ 
-          isOpen: true, 
-          relatedCount: relatedGroupCount,
-          hasRule: hasRule
-        });
-        setIsSaving(false); // 彈出選項時解除儲存中狀態，讓使用者可重新操作
-        return; 
-      }
+    const firstItem = remainingItems[0];
+    // 僅針對帶有 rule_id (分期/定期) 的交易進行攔截，完全忽略 group_id
+    if (remainingItems.length === 1 && firstItem.rule_id) {
+      setRecurringEditPrompt(true);
+      setIsSaving(false);
+      return; 
     }
     
-    await executeSave(false, false);
+    await executeSave(false);
   };
 
-  const executeSave = async (applyToAll: boolean, applyToRule: boolean) => {
-    setGroupEditPrompt(null);
+  const executeSave = async (applyToRule: boolean) => {
+    const applyToAll = false; // 依照需求，忽略一般發票群組的連動修改
     try {
       const remainingItems = items.filter(item => item.amount !== 0 || item.item_name);
 
@@ -476,7 +464,7 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
             ${Math.abs(totalAmount).toLocaleString()}
           </span>
           <div className="mt-item px-item py-1.5 rounded-button bg-surface-glass border border-hairline border-border-subtle text-caption font-caption uppercase tracking-wide text-text-tertiary">
-            編輯總金額與共用資訊
+            共 {items.length} 項明細
           </div>
         </div>
 
@@ -729,41 +717,56 @@ export default function TransactionFormView({ initialData, onSave, onBack }: Tra
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {groupEditPrompt && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center p-section bg-bg-base/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-surface-primary border border-border-subtle w-full max-w-sm p-section flex flex-col items-center gap-item text-center rounded-card shadow-dropdown ease-spring"
-            >
-              <h3 className="text-h2 font-h2 text-text-primary leading-tight">連動修改</h3>
-              <p className="text-text-tertiary text-body leading-relaxed">
-                {groupEditPrompt.hasRule 
-                  ? "這是一筆具備「分期或循環規則」的交易。請問要連動修改未來的規則與尚未確認的期數嗎？"
-                  : `這是一個具有 ${groupEditPrompt.relatedCount} 個項目的群組交易。請問是否要將修改套用至全部紀錄？`}
-              </p>
-              <div className="flex flex-col gap-inner w-full mt-2">
-                <button 
-                  onClick={() => executeSave(true, !!groupEditPrompt.hasRule)} 
-                  className="w-full py-item rounded-button bg-brand-primary text-bg-base font-h3 active:scale-95 transition-all ease-apple"
-                >
-                  {groupEditPrompt.hasRule ? "修改此筆與未來全部" : `套用至全部 ${groupEditPrompt.relatedCount} 筆`}
-                </button>
-                <button 
-                  onClick={() => executeSave(false, false)} 
-                  className="w-full py-item rounded-button bg-surface-glass text-text-secondary font-h3 active:scale-95 transition-all ease-apple border border-border-subtle"
-                >
-                  僅修改此單筆紀錄
-                </button>
-                <button onClick={() => setGroupEditPrompt(null)} className="w-full py-item mt-1 text-text-tertiary text-caption font-h3 active:opacity-50 transition-all ease-apple">
-                  取消儲存
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <ConfirmModal
+        isOpen={recurringEditPrompt}
+        title="修改定期/分期交易"
+        message="這是一筆分期或定期產生的交易。您希望將這次的修改同步套用到未來的排程中，還是僅修改當前這筆紀錄？"
+        confirmText="套用至未來排程"
+        cancelText="僅修改此單筆"
+        onConfirm={() => {
+          setRecurringEditPrompt(false);
+          executeSave(true); // 傳入 true，更新未來排程
+        }}
+        onCancel={() => {
+          setRecurringEditPrompt(false);
+          executeSave(false); // 傳入 false，僅修改此筆
+        }}
+      />
     </motion.div>
+  );
+}
+
+function ConfirmModal({ isOpen, title, message, confirmText, cancelText, onConfirm, onCancel }: any) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-section bg-bg-base/60 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }} 
+            animate={{ opacity: 1, scale: 1 }} 
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-surface-primary border border-border-subtle w-full max-w-sm p-section flex flex-col items-center gap-item text-center rounded-card shadow-dropdown ease-spring"
+          >
+            <h3 className="text-h2 font-h2 text-text-primary leading-tight">{title}</h3>
+            <p className="text-text-tertiary text-body leading-relaxed">{message}</p>
+            <div className="flex flex-col gap-inner w-full mt-2">
+              <button 
+                onClick={onConfirm} 
+                className="w-full py-item rounded-button bg-brand-primary text-bg-base font-h3 active:scale-95 transition-all ease-apple"
+              >
+                {confirmText}
+              </button>
+              <button 
+                onClick={onCancel} 
+                className="w-full py-item rounded-button bg-surface-glass text-text-secondary font-h3 active:scale-95 transition-all ease-apple border border-border-subtle"
+              >
+                {cancelText}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
 
