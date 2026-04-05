@@ -153,8 +153,8 @@ export default function PendingView() {
 
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-section bg-bg-base pb-nav-clearance animate-in fade-in duration-normal">
-      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple">
-        <h3 className="text-h3 font-h3 text-text-primary leading-tight">待審核交易</h3>
+      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple min-h-[56px]">
+        <h3 className="text-h3 font-h3 text-text-primary leading-tight flex-1">待審核交易</h3>
       </header>
 
       <div className="px-screen flex flex-col gap-section">

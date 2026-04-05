@@ -187,13 +187,13 @@ export default function HomeView({ onBudgetClick }: HomeViewProps) {
     <div className="w-full min-h-full flex flex-col text-text-primary relative">
 
 
-      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple">
-        <div className="flex flex-col items-start justify-center">
+      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple min-h-[56px]">
+        <div className="flex flex-col items-start justify-center flex-1">
           <h3 className="text-h3 font-h3 text-text-primary leading-tight">
             {currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月
           </h3>
         </div>
-        <div className="flex items-center gap-item">
+        <div className="flex items-center gap-item flex-shrink-0 justify-end">
           <div className="flex bg-surface-glass p-0.5 rounded-button border border-hairline border-border-subtle scale-90 origin-right transition-all duration-normal ease-apple">
             <button onClick={() => changeMonth(-1)} className="px-item py-micro rounded-button hover:bg-brand-primary active:scale-95 active:opacity-active transition-all duration-normal text-text-tertiary hover:text-bg-base">
               <ChevronLeft className="size-icon-lg" />

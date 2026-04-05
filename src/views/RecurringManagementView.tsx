@@ -299,15 +299,17 @@ export default function RecurringManagementView({ onBack }: RecurringManagementV
       transition={{ type: "spring", stiffness: 400, damping: 40 }}
       className="fixed inset-0 z-modal bg-bg-base flex flex-col overflow-hidden"
     >
-      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple">
-        <button onClick={onBack} className="p-inner -ml-inner rounded-button active:bg-surface-glass-heavy transition-colors ease-apple group flex items-center">
-          <ChevronLeft className="size-icon-lg text-text-tertiary group-active:text-text-primary transition-colors" />
+      <header className="flex shrink-0 items-center justify-start px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple min-h-[56px] gap-1">
+        <button 
+          onClick={onBack} 
+          className="w-10 h-10 -ml-1 flex items-center justify-center rounded-button active:bg-surface-glass-heavy transition-colors ease-apple group flex-shrink-0"
+        >
+          <ChevronLeft className="size-icon-md text-text-tertiary group-active:text-text-primary transition-colors" />
         </button>
-        <div className="flex items-center gap-2">
-          <Repeat className="size-icon-md text-brand-primary" />
-          <h1 className="text-h3 font-h3 text-text-primary tracking-tight leading-tight">分期與定期管理</h1>
+        <div className="flex items-center gap-2 overflow-hidden">
+          <Repeat className="size-icon-md text-brand-primary shrink-0" />
+          <h1 className="text-h3 font-h3 text-text-primary tracking-tight leading-tight truncate">分期與定期管理</h1>
         </div>
-        <div className="w-10"></div>
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-screen py-section flex flex-col gap-section pb-nav-clearance">

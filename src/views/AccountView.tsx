@@ -74,13 +74,13 @@ export default function AccountView() {
 
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-section bg-bg-base pb-nav-clearance animate-in fade-in duration-normal">
-      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple">
-        <h3 className="text-h3 font-h3 text-text-primary leading-tight">我的帳戶</h3>
+      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple min-h-[56px]">
+        <h3 className="text-h3 font-h3 text-text-primary leading-tight flex-1">我的帳戶</h3>
         <button 
           onClick={() => setIsAddOpen(true)} 
-          className="p-inner rounded-button active:bg-surface-glass-heavy text-brand-primary transition-colors active:opacity-active duration-fast ease-apple"
+          className="w-10 h-10 flex items-center justify-center rounded-button active:bg-surface-glass-heavy text-brand-primary transition-colors active:opacity-active duration-fast ease-apple flex-shrink-0"
         >
-          <Plus className="size-icon-lg text-brand-primary" />
+          <Plus className="size-icon-md text-brand-primary" />
         </button>
       </header>
 

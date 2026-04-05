@@ -191,21 +191,19 @@ export default function SettingsView() {
         className="hidden" 
       />
 
-      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple">
-        <div className="flex flex-col items-start justify-center">
-          <h1 className="text-h3 font-h3 text-text-primary leading-tight">設定</h1>
-        </div>
-        <div className="flex items-center gap-item">
+      <header className="flex shrink-0 items-center justify-between px-screen pt-safe-top pb-item bg-bg-base/80 backdrop-blur-nav border-b border-hairline border-border-subtle sticky top-0 z-nav transition-all duration-normal ease-apple min-h-[56px]">
+        <h3 className="text-h3 font-h3 text-text-primary leading-tight flex-1">設定</h3>
+        <div className="flex items-center justify-end min-w-[40px] h-10 relative shrink-0">
           <AnimatePresence>
             {lastAction && (
               <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-brand-primary text-bg-base px-section py-inner rounded-button font-h3 shadow-xl shadow-brand-primary/20 flex items-center gap-inner ease-spring"
+                initial={{ opacity: 0, scale: 0.9, x: 20 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.9, x: 20 }}
+                className="absolute right-0 bg-brand-primary text-bg-base px-3 py-1.5 rounded-button font-h3 shadow-xl shadow-brand-primary/20 flex items-center gap-1.5 whitespace-nowrap ease-spring"
               >
                 <Check className="size-icon-sm" strokeWidth={3} />
-                {lastAction}
+                <span className="text-[13px]">{lastAction}</span>
               </motion.div>
             )}
           </AnimatePresence>
